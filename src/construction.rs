@@ -1,5 +1,5 @@
 use crate::catalog::{CELL, MachineAssets, MachineKind, place};
-use crate::player::{Player, UiHover};
+use crate::player::{MainCamera, Player, UiHover};
 use avian3d::prelude::*;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
@@ -112,7 +112,7 @@ fn update_ghost(
     grid: Res<BuildGrid>,
     hovering: Res<UiHover>,
     assets: Res<MachineAssets>,
-    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     window: Single<&Window>,
     ghosts: Query<Entity, With<Ghost>>,
     mut commands: Commands,
@@ -144,7 +144,7 @@ fn place_machine(
     mouse: Res<ButtonInput<MouseButton>>,
     hovering: Res<UiHover>,
     assets: Res<MachineAssets>,
-    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     window: Single<&Window>,
     mut mode: ResMut<BuildMode>,
     mut grid: ResMut<BuildGrid>,
@@ -174,7 +174,7 @@ fn remove_machine(
     keys: Res<ButtonInput<KeyCode>>,
     hovering: Res<UiHover>,
     spatial: SpatialQuery,
-    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     window: Single<&Window>,
     player: Single<Entity, With<Player>>,
     parents: Query<&ChildOf>,

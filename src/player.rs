@@ -14,6 +14,9 @@ const GROUND_PROBE: f32 = 0.18;
 pub struct UiHover(pub bool);
 
 #[derive(Component)]
+pub struct MainCamera;
+
+#[derive(Component)]
 #[require(
     RigidBody::Kinematic,
     CustomPositionIntegration,
@@ -76,6 +79,7 @@ fn spawn_player(
     ));
 
     commands.spawn((
+        MainCamera,
         Camera3d::default(),
         Projection::Perspective(PerspectiveProjection {
             fov: 68f32.to_radians(),
@@ -97,7 +101,7 @@ fn move_player(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     hovering: Res<UiHover>,
-    camera: Single<&Transform, (With<Camera3d>, Without<Player>)>,
+    camera: Single<&Transform, (With<MainCamera>, Without<Player>)>,
     player: Single<(Entity, &Player, &Collider, &mut Transform, &mut LinearVelocity)>,
     move_and_slide: MoveAndSlide,
 ) {
@@ -172,7 +176,7 @@ fn follow_player(
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     player: Single<&Transform, With<Player>>,
-    mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>,
+    mut camera: Single<&mut Transform, (With<MainCamera>, Without<Player>)>,
 ) {
     let (yaw, pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
     let delta = mouse

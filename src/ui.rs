@@ -2,7 +2,7 @@ use crate::construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity, machi
 use crate::icon;
 use crate::machine::Money;
 use crate::ore::{Effects, Ore, OreLimit};
-use crate::player::{Player, UiHover};
+use crate::player::{MainCamera, Player, UiHover};
 use crate::store::HoverInfo;
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -185,7 +185,7 @@ fn update_tooltip(
     mode: Res<BuildMode>,
     hovering: Res<UiHover>,
     spatial: SpatialQuery,
-    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     window: Single<&Window>,
     player: Single<Entity, With<Player>>,
     parents: Query<&ChildOf>,
