@@ -21,6 +21,7 @@ const ARROWS_PER_BELT: usize = 3;
 const FURNACE_FOOT: f32 = 0.34;
 const FURNACE_MOUTH: f32 = FURNACE_FOOT + 0.52;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
+const WASH_BAR: f32 = 1.62;
 const BONFIRE_TOP: f32 = 0.92;
 const TORCH_HEAD: f32 = 1.25;
 const LAMP_HEIGHT: f32 = 2.0;
@@ -41,6 +42,7 @@ pub enum MachineKind {
   Forge,
   FlameJet,
   MistCoil,
+  Orewash,
   DecayChamber,
   Torch,
   Bonfire,
@@ -101,13 +103,14 @@ impl Tier {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 11] = [
+  pub const ALL: [Self; 12] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Furnace,
     Self::Forge,
     Self::FlameJet,
     Self::MistCoil,
+    Self::Orewash,
     Self::DecayChamber,
     Self::Torch,
     Self::Bonfire,
@@ -121,7 +124,12 @@ impl MachineKind {
   pub const fn carries_belt(self) -> bool {
     matches!(
       self,
-      Self::Conveyor | Self::Forge | Self::FlameJet | Self::MistCoil | Self::DecayChamber
+      Self::Conveyor
+        | Self::Forge
+        | Self::FlameJet
+        | Self::MistCoil
+        | Self::Orewash
+        | Self::DecayChamber
     )
   }
 
@@ -169,6 +177,13 @@ impl MachineKind {
         tier: Tier::Exotic,
         unlock: Some("Burn an ore worth over $500")
       },
+      Self::Orewash => MachineSpec {
+        name: "The Orewash",
+        blurb: "Your ores need to be at the orewash to wash them.",
+        price: 700.0,
+        tier: Tier::Refined,
+        unlock: None
+      },
       Self::DecayChamber => MachineSpec {
         name: "Decay Chamber",
         blurb: "Leaves ore humming and faintly green for a very long time.",
@@ -212,6 +227,7 @@ impl MachineKind {
       Self::Forge => Some(Upgrader { multiplier: 2.5, effects: Effects::FIERY }),
       Self::FlameJet => Some(Upgrader { multiplier: 3.2, effects: Effects::FIERY }),
       Self::MistCoil => Some(Upgrader { multiplier: 4.0, effects: Effects::WET }),
+      Self::Orewash => Some(Upgrader { multiplier: 3.0, effects: Effects::WET }),
       Self::DecayChamber => {
         Some(Upgrader { multiplier: 9.0, effects: Effects::RADIOACTIVE })
       }
@@ -237,6 +253,7 @@ impl MachineKind {
       Self::MistCoil => {
         (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
       }
+      Self::Orewash => (Color::srgb(0.20, 0.52, 0.66), LinearRgba::rgb(0.04, 0.26, 0.42)),
       Self::DecayChamber => {
         (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
       }
@@ -375,6 +392,49 @@ fn jet_nozzle() -> Tree {
   ])
 }
 
+fn orewash_tunnel() -> Tree {
+  let rail = |side: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.94, 0.20, 0.08), 0.06),
+      Vec3::new(0.0, 0.46, side * 0.93)
+    )
+  };
+  let nozzle = |along: f32| {
+    sdf::at(sdf::cylinder(0.07, 0.16), Vec3::new(along * 0.46, WASH_BAR - 0.16, 0.0))
+  };
+  let posts = (0..4).map(|post| {
+    let (side, along) = ((post % 2) as f32 * 2.0 - 1.0, (post / 2) as f32 * 2.0 - 1.0);
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.07, WASH_BAR / 2.0, 0.07), 0.04),
+      Vec3::new(along * 0.86, WASH_BAR / 2.0, side * 0.90)
+    )
+  });
+  let brush = |side: f32| {
+    sdf::at(
+      sdf::rounded_cylinder(0.22, 0.50, 0.15),
+      Vec3::new(0.0, BELT_TOP + 0.54, side * 0.62)
+    )
+  };
+  sdf::union(
+    [
+      belt_deck(),
+      rail(1.0),
+      rail(-1.0),
+      nozzle(1.0),
+      nozzle(-1.0),
+      brush(1.0),
+      brush(-1.0),
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.99, 0.08, 0.38), 0.06),
+        Vec3::new(0.0, WASH_BAR + 0.18, 0.0)
+      ),
+      sdf::at(sdf::along_x(sdf::cylinder(0.08, 0.92)), Vec3::new(0.0, WASH_BAR, 0.0))
+    ]
+    .into_iter()
+    .chain(posts)
+  )
+}
+
 fn torch_post() -> Tree {
   sdf::union([
     sdf::at(
@@ -397,39 +457,76 @@ fn fire_gradient() -> bevy_hanabi::Gradient<Vec4> {
   ])
 }
 
-struct Flame {
+fn water_gradient() -> bevy_hanabi::Gradient<Vec4> {
+  bevy_hanabi::Gradient::from_keys([
+    (0.0, Vec4::new(0.88, 0.96, 1.0, 0.0)),
+    (0.15, Vec4::new(0.74, 0.92, 1.0, 0.85)),
+    (0.7, Vec4::new(0.42, 0.70, 0.98, 0.6)),
+    (1.0, Vec4::new(0.26, 0.52, 0.90, 0.0))
+  ])
+}
+
+struct Plume {
   name: &'static str,
   thrust: Vec3,
   spread: f32,
+  source: f32,
   girth: f32,
   life: f32,
-  rate: f32
+  rate: f32,
+  lift: f32,
+  colors: fn() -> bevy_hanabi::Gradient<Vec4>,
+  blend: bevy_hanabi::AlphaMode
 }
 
-impl Flame {
+impl Plume {
   const TORCH: Self = Self {
     name: "torch flame",
     thrust: Vec3::new(0.0, 1.5, 0.0),
     spread: 0.22,
+    source: 0.085,
     girth: 0.17,
     life: 0.85,
-    rate: 160.0
+    rate: 160.0,
+    lift: 1.1,
+    colors: fire_gradient,
+    blend: bevy_hanabi::AlphaMode::Add
   };
   const BONFIRE: Self = Self {
     name: "bonfire",
     thrust: Vec3::new(0.0, 2.4, 0.0),
     spread: 0.55,
+    source: 0.22,
     girth: 0.44,
     life: 1.15,
-    rate: 420.0
+    rate: 420.0,
+    lift: 1.1,
+    colors: fire_gradient,
+    blend: bevy_hanabi::AlphaMode::Add
   };
   const JET: Self = Self {
     name: "flame jet",
     thrust: Vec3::new(0.0, 0.45, 6.2),
     spread: 0.42,
+    source: 0.13,
     girth: 0.26,
     life: 0.42,
-    rate: 900.0
+    rate: 900.0,
+    lift: 1.1,
+    colors: fire_gradient,
+    blend: bevy_hanabi::AlphaMode::Add
+  };
+  const WASH: Self = Self {
+    name: "orewash spray",
+    thrust: Vec3::new(0.0, -0.9, 0.0),
+    spread: 1.3,
+    source: 0.62,
+    girth: 0.11,
+    life: 0.6,
+    rate: 520.0,
+    lift: -4.5,
+    colors: water_gradient,
+    blend: bevy_hanabi::AlphaMode::Blend
   };
 
   fn asset(self) -> EffectAsset {
@@ -438,7 +535,7 @@ impl Flame {
       * writer.lit(self.spread);
     let init_pos = SetPositionSphereModifier {
       center: writer.lit(Vec3::ZERO).expr(),
-      radius: writer.lit(self.girth * 0.5).expr(),
+      radius: writer.lit(self.source).expr(),
       dimension: ShapeDimension::Volume
     };
     let init_vel = SetAttributeModifier::new(
@@ -451,7 +548,7 @@ impl Flame {
       writer.lit(self.life * 0.6).uniform(writer.lit(self.life)).expr()
     );
     let drag = LinearDragModifier::new(writer.lit(1.2).expr());
-    let lift = AccelModifier::new(writer.lit(Vec3::Y * 1.1).expr());
+    let lift = AccelModifier::new(writer.lit(Vec3::Y * self.lift).expr());
     let size = SizeOverLifetimeModifier {
       gradient: bevy_hanabi::Gradient::from_keys([
         (0.0, Vec3::splat(self.girth)),
@@ -464,14 +561,14 @@ impl Flame {
     EffectAsset::new(4096, SpawnerSettings::rate(self.rate.into()), writer.finish())
       .with_name(self.name)
       .with_simulation_space(SimulationSpace::Local)
-      .with_alpha_mode(bevy_hanabi::AlphaMode::Add)
+      .with_alpha_mode(self.blend)
       .init(init_pos)
       .init(init_vel)
       .init(init_age)
       .init(init_lifetime)
       .update(drag)
       .update(lift)
-      .render(ColorOverLifetimeModifier::new(fire_gradient()))
+      .render(ColorOverLifetimeModifier::new((self.colors)()))
       .render(size)
   }
 }
@@ -502,6 +599,7 @@ pub struct MachineAssets {
   torch_flame: Handle<EffectAsset>,
   bonfire_flame: Handle<EffectAsset>,
   jet_flame: Handle<EffectAsset>,
+  wash_spray: Handle<EffectAsset>,
   ember_mesh: Handle<Mesh>,
   ember_glow: Handle<StandardMaterial>,
   lamp_glow: Handle<StandardMaterial>,
@@ -520,6 +618,7 @@ impl MachineAssets {
       MachineKind::Dropper => dropper_body(),
       MachineKind::Furnace => oven_shell(),
       MachineKind::FlameJet => jet_nozzle(),
+      MachineKind::Orewash => orewash_tunnel(),
       MachineKind::Torch => torch_post(),
       MachineKind::Bonfire => bonfire_pile(),
       MachineKind::Lamp => lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT),
@@ -641,9 +740,10 @@ fn load_machine_assets(
       emissive: LinearRgba::rgb(46.0, 15.0, 2.2),
       ..default()
     }),
-    torch_flame: effects.add(Flame::TORCH.asset()),
-    bonfire_flame: effects.add(Flame::BONFIRE.asset()),
-    jet_flame: effects.add(Flame::JET.asset()),
+    torch_flame: effects.add(Plume::TORCH.asset()),
+    bonfire_flame: effects.add(Plume::BONFIRE.asset()),
+    jet_flame: effects.add(Plume::JET.asset()),
+    wash_spray: effects.add(Plume::WASH.asset()),
     ember_mesh: meshes.add(Sphere::new(1.0).mesh().ico(2).expect("ember mesh")),
     ember_glow: materials.add(StandardMaterial {
       base_color: EMBER_GLOW,
@@ -842,6 +942,13 @@ pub fn place(
           parts.push((
             Collider::cuboid(1.04, 2.5, 0.5),
             Transform::from_xyz(0.0, 1.05, -0.87)
+          ));
+        }
+        if kind == MachineKind::Orewash {
+          commands.spawn((
+            ParticleEffect::new(assets.wash_spray.clone()),
+            Transform::from_xyz(0.0, WASH_BAR - 0.34, 0.0),
+            ChildOf(root)
           ));
         }
         commands.spawn((
