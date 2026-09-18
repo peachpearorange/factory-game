@@ -11,6 +11,9 @@ ores within certain distance of camera have a popup above them with value and co
 a popup can be opened for the store where player can buy machines, but most machines are unlocked through completing some sort of challenge
 machines placed on a grid. standard conveyor belt is 2x2 in the grid. hitboxes of machines rendered as blue transparent boxes with lines at edges, turns red if player is placing a machine that collides with an existing machine.
 
+# Code
+avoid comments. just have code self-explanatory by names and structure. concise. use let chains. if there's repetition, make helpers.
+
 # Notes
 `world::GROUND` is y = 0, the exact top of the concrete platform. Author every shape and spawn position relative to it so meshes rest on the ground.
 
@@ -20,5 +23,3 @@ Env vars, both inert when unset:
 
 So `FACTORY_DAY=24 FACTORY_SHOT=5 cargo run` gives a daylight screenshot without waiting or pressing anything, and `FACTORY_SHOT=17` on the same short day gives a night one.
 
-# Code
-avoid comments. just have code self-explanatory by names and structure. concise. use let chains. if there's repetition, make helpers. text that will be seen by the player should be written by Opus 4.6 because it writes well.
