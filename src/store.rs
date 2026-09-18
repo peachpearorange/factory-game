@@ -7,7 +7,6 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
              ui::{Bold, heavy, label}},
      bevy::prelude::*};
 
-const DIM: Color = Color::srgb(0.52, 0.55, 0.60);
 const BRIGHT: Color = Color::srgb(0.94, 0.95, 0.97);
 const ITEMS_TINT: Color = Color::srgb(0.36, 0.86, 0.99);
 const STORE_TINT: Color = Color::srgb(0.46, 0.93, 0.46);
@@ -79,28 +78,20 @@ fn side_panel(left: Val, right: Val) -> impl Bundle {
       flex_direction: FlexDirection::Column,
       row_gap: px(12),
       padding: UiRect::all(px(16)),
-      border: UiRect::all(px(1)),
       border_radius: BorderRadius::all(px(12)),
       display: Display::None,
       overflow: Overflow::scroll_y(),
       ..default()
     },
-    BackgroundColor(Color::srgba(0.03, 0.04, 0.06, 0.95)),
-    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.16))
+    BackgroundColor(Color::srgba(0.03, 0.04, 0.06, 0.95))
   )
 }
 
-fn header(glyph: impl Bundle, title: &str, hint: &str) -> impl Bundle {
-  (
-    Node { flex_direction: FlexDirection::Column, row_gap: px(3), ..default() },
-    children![
-      (
-        Node { align_items: AlignItems::Center, column_gap: px(9), ..default() },
-        children![glyph, label(title, 23.0, BRIGHT)],
-      ),
-      label(hint, 12.0, DIM),
-    ]
-  )
+fn header(glyph: impl Bundle, title: &str) -> impl Bundle {
+  (Node { align_items: AlignItems::Center, column_gap: px(9), ..default() }, children![
+    glyph,
+    label(title, 23.0, BRIGHT)
+  ])
 }
 
 fn grid() -> Node {
@@ -165,8 +156,7 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
   let store = commands
     .spawn((StorePanel, side_panel(Val::Auto, px(18)), children![header(
       icon::store(BRIGHT),
-      "Store",
-      "What you buy goes to your inventory.",
+      "Store"
     )]))
     .id();
   let store_grid = commands.spawn((grid(), ChildOf(store))).id();
@@ -174,8 +164,7 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
   let inventory = commands
     .spawn((InventoryPanel, side_panel(px(18), Val::Auto), children![header(
       icon::inventory(BRIGHT),
-      "Inventory",
-      "Pick one, then click the platform to place it. R rotates, X takes it back.",
+      "Inventory"
     )]))
     .id();
   let inventory_grid = commands.spawn((grid(), ChildOf(inventory))).id();

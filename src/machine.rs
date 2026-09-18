@@ -7,7 +7,7 @@ use {crate::{catalog::CELL,
 
 const DROP_HEIGHT: f32 = 1.0;
 const ARROW_SPEED: f32 = 0.85;
-const ARROW_SPAN: f32 = 1.2;
+pub const ARROW_SPAN: f32 = 1.2;
 
 #[derive(Component)]
 #[require(ActiveCollisionHooks::MODIFY_CONTACTS)]
@@ -21,8 +21,9 @@ pub struct BeltArrow(pub f32);
 
 fn slide_belt_arrows(time: Res<Time>, mut arrows: Query<(&BeltArrow, &mut Transform)>) {
   for (BeltArrow(phase), mut transform) in &mut arrows {
-    transform.translation.x =
-      ((phase + time.elapsed_secs() * ARROW_SPEED).rem_euclid(1.0) - 0.5) * ARROW_SPAN;
+    let travel = (phase + time.elapsed_secs() * ARROW_SPEED).rem_euclid(1.0);
+    transform.translation.x = (travel - 0.5) * ARROW_SPAN;
+    transform.scale = Vec3::splat((4.0 * travel * (1.0 - travel)).sqrt());
   }
 }
 
@@ -67,6 +68,12 @@ pub struct Upgrader {
 
 #[derive(Component)]
 pub struct Furnace;
+
+#[derive(Message)]
+pub struct OreSold {
+  pub at: Vec3,
+  pub value: f32
+}
 
 #[derive(Resource)]
 pub struct Money(pub f32);
@@ -124,7 +131,8 @@ fn upgrade_ores(
 fn burn_ores(
   mut events: MessageReader<CollisionStart>,
   furnaces: Query<&Furnace>,
-  ores: Query<&Ore>,
+  ores: Query<(&Ore, &GlobalTransform)>,
+  mut sold: MessageWriter<OreSold>,
   mut money: ResMut<Money>,
   mut commands: Commands
 ) {
@@ -132,9 +140,10 @@ fn burn_ores(
   for event in events.read() {
     if let Some((_, entity)) = machine_and_ore(event, &furnaces)
       && burned.insert(entity)
-      && let Ok(ore) = ores.get(entity)
+      && let Ok((ore, transform)) = ores.get(entity)
     {
       money.0 += ore.value;
+      sold.write(OreSold { at: transform.translation(), value: ore.value });
       commands.entity(entity).despawn();
     }
   }
@@ -152,7 +161,7 @@ fn cull_fallen_ores(
 }
 
 pub fn plugin(app: &mut App) {
-  app.init_resource::<Money>().add_systems(
+  app.init_resource::<Money>().add_message::<OreSold>().add_systems(
     Update,
     (drop_ores, upgrade_ores, burn_ores, cull_fallen_ores, slide_belt_arrows)
   );

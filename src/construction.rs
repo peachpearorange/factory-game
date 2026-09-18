@@ -1,11 +1,11 @@
-use {crate::{catalog::{CELL, MachineAssets, MachineKind, place},
+use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_arrows},
              menu::playing,
              player::{MainCamera, Player, UiHover}},
      avian3d::prelude::*,
      bevy::{platform::collections::HashMap, prelude::*},
      std::f32::consts::FRAC_PI_2};
 
-const GRID_HALF: i32 = 9;
+const GRID_HALF: i32 = 10;
 const REACH: f32 = 40.0;
 
 #[derive(Component)]
@@ -31,7 +31,7 @@ pub enum BuildMode {
   }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct Inventory([u32; MachineKind::COUNT]);
 
 impl Inventory {
@@ -42,6 +42,16 @@ impl Inventory {
   fn take(&mut self, kind: MachineKind) -> bool {
     let slot = &mut self.0[kind.index()];
     (*slot > 0).then(|| *slot -= 1).is_some()
+  }
+}
+
+impl Default for Inventory {
+  fn default() -> Self {
+    let mut stock = Self([0; MachineKind::COUNT]);
+    for kind in [MachineKind::Furnace, MachineKind::Dropper, MachineKind::Conveyor] {
+      stock.add(kind);
+    }
+    stock
   }
 }
 
@@ -125,16 +135,21 @@ fn update_ghost(
     && let Some(cell) = aimed_cell(ray)
   {
     let blocked = grid.0.contains_key(&cell);
-    commands.spawn((
-      Ghost,
-      Mesh3d(assets.mesh(kind)),
-      MeshMaterial3d(
-        blocked
-          .then(|| assets.ghost_blocked.clone())
-          .unwrap_or_else(|| assets.ghost_valid.clone())
-      ),
-      cell_transform(cell, turns)
-    ));
+    let ghost = commands
+      .spawn((
+        Ghost,
+        Mesh3d(assets.mesh(kind)),
+        MeshMaterial3d(
+          blocked
+            .then(|| assets.ghost_blocked.clone())
+            .unwrap_or_else(|| assets.ghost_valid.clone())
+        ),
+        cell_transform(cell, turns)
+      ))
+      .id();
+    if kind.carries_belt() {
+      spawn_ghost_arrows(&mut commands, &assets, ghost);
+    }
   }
 }
 
@@ -153,7 +168,7 @@ fn place_machine(
   if let BuildMode::Placing { kind, turns } = *mode
     && !hovering.0
     && !mode.is_changed()
-    && mouse.just_pressed(MouseButton::Left)
+    && mouse.pressed(MouseButton::Left)
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(cell) = aimed_cell(ray)
     && !grid.0.contains_key(&cell)

@@ -1,18 +1,23 @@
 use {crate::{construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity,
                             machine_root},
              icon,
-             machine::Money,
+             machine::{Money, OreSold},
              ore::{Effects, Ore, OreLimit},
              player::{MainCamera, Player, UiHover},
              store::HoverInfo},
      avian3d::prelude::*,
-     bevy::prelude::*};
+     bevy::{ecs::entity::EntityHashSet, prelude::*}};
 
 const METER_WIDTH: f32 = 208.0;
+const TAG_RANGE: f32 = 30.0;
+const TAG_LIFT: f32 = 0.62;
+const SOLD_LIFE: f32 = 1.1;
+const SOLD_RISE: f32 = 78.0;
 pub const DIM: Color = Color::srgb(0.55, 0.58, 0.63);
 const READABLE: Color = Color::srgb(0.87, 0.90, 0.94);
 pub const BRIGHT: Color = Color::srgb(0.93, 0.94, 0.96);
 const FIRE: Color = Color::srgb(1.0, 0.45, 0.15);
+const CASH: Color = Color::srgb(0.58, 0.99, 0.62);
 const WATER: Color = Color::srgb(0.35, 0.65, 1.0);
 const DECAY: Color = Color::srgb(0.45, 0.95, 0.35);
 
@@ -90,13 +95,11 @@ fn floating(bottom: f32, width: f32) -> impl Bundle {
       align_items: AlignItems::Center,
       row_gap: px(3),
       padding: UiRect::all(px(10)),
-      border: UiRect::all(px(1)),
       border_radius: BorderRadius::all(px(7)),
       display: Display::None,
       ..default()
     },
-    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.9)),
-    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.18))
+    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.9))
   )
 }
 
@@ -121,13 +124,11 @@ fn spawn_hud(mut commands: Commands) {
           height: px(22),
           align_items: AlignItems::Center,
           justify_content: JustifyContent::Center,
-          border: UiRect::all(px(1)),
           border_radius: BorderRadius::all(px(5)),
           overflow: Overflow::clip(),
           ..default()
         },
         BackgroundColor(Color::srgb(0.10, 0.11, 0.13)),
-        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.35)),
         children![
           (
             Node {
@@ -158,13 +159,11 @@ fn spawn_hud(mut commands: Commands) {
       width: px(260),
       justify_content: JustifyContent::Center,
       padding: UiRect::all(px(9)),
-      border: UiRect::all(px(1)),
       border_radius: BorderRadius::all(px(8)),
       display: Display::None,
       ..default()
     },
     BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.85)),
-    BorderColor::all(Color::srgba(0.45, 0.95, 0.55, 0.45)),
     children![label("R to rotate     Q to cancel", 13.0, BRIGHT)]
   ));
 
@@ -286,9 +285,134 @@ fn update_tooltip(
   }
 }
 
+pub fn money(value: f32) -> String {
+  const STEPS: [(f32, &str); 5] =
+    [(1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "k"), (1.0, "")];
+  let (scale, suffix) =
+    STEPS.into_iter().find(|&(step, _)| value.abs() >= step).unwrap_or((1.0, ""));
+  let scaled = value / scale;
+  (scaled.abs() < 10.0 && !suffix.is_empty())
+    .then(|| format!("${scaled:.1}{suffix}"))
+    .unwrap_or_else(|| format!("${scaled:.0}{suffix}"))
+}
+
+#[derive(Component)]
+struct ValueTag(Entity);
+
+fn pinned(at: Vec2) -> impl Bundle {
+  (
+    Node {
+      position_type: PositionType::Absolute,
+      left: px(at.x),
+      top: px(at.y),
+      padding: UiRect::axes(px(6), px(2)),
+      border_radius: BorderRadius::all(px(5)),
+      ..default()
+    },
+    UiTransform { translation: Val2::new(percent(-50), percent(-100)), ..default() },
+    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.66))
+  )
+}
+
+fn track_value_tags(
+  eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+  ores: Query<(Entity, &Ore, &GlobalTransform)>,
+  mut tags: Query<(Entity, &ValueTag, &mut Node, &mut Text)>,
+  mut commands: Commands
+) {
+  let (camera, view) = *eye;
+  let watched = view.translation();
+  let above = |transform: &GlobalTransform| {
+    (transform.translation().distance(watched) < TAG_RANGE)
+      .then(|| {
+        camera.world_to_viewport(view, transform.translation() + Vec3::Y * TAG_LIFT)
+      })
+      .and_then(Result::ok)
+  };
+
+  let mut tagged = EntityHashSet::default();
+  for (tag, &ValueTag(pinned_to), mut node, mut text) in &mut tags {
+    if let Ok((_, ore, transform)) = ores.get(pinned_to)
+      && let Some(at) = above(transform)
+    {
+      node.left = px(at.x);
+      node.top = px(at.y);
+      **text = money(ore.value);
+      tagged.insert(pinned_to);
+    } else {
+      commands.entity(tag).despawn();
+    }
+  }
+
+  for (entity, ore, transform) in &ores {
+    if !tagged.contains(&entity)
+      && let Some(at) = above(transform)
+    {
+      commands.spawn((
+        ValueTag(entity),
+        pinned(at),
+        label(&money(ore.value), 13.0, BRIGHT)
+      ));
+    }
+  }
+}
+
+#[derive(Component)]
+struct SoldTag {
+  at: Vec3,
+  timer: Timer
+}
+
+fn pop_sold_ores(
+  mut sold: MessageReader<OreSold>,
+  bold: Res<Bold>,
+  mut commands: Commands
+) {
+  for &OreSold { at, value } in sold.read() {
+    commands.spawn((
+      SoldTag { at, timer: Timer::from_seconds(SOLD_LIFE, TimerMode::Once) },
+      Node { position_type: PositionType::Absolute, ..default() },
+      heavy(&money(value), 21.0, CASH, &bold)
+    ));
+  }
+}
+
+fn animate_sold_tags(
+  time: Res<Time>,
+  eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+  mut tags: Query<(Entity, &mut SoldTag, &mut Node, &mut UiTransform, &mut TextColor)>,
+  mut commands: Commands
+) {
+  let (camera, view) = *eye;
+  for (entity, mut tag, mut node, mut transform, mut color) in &mut tags {
+    tag.timer.tick(time.delta());
+    let age = tag.timer.fraction();
+    let spot = camera.world_to_viewport(view, tag.at).ok();
+    node.display = spot.map(|_| Display::Flex).unwrap_or(Display::None);
+    if let Some(at) = spot {
+      node.left = px(at.x);
+      node.top = px(at.y);
+    }
+    transform.translation = Val2::new(percent(-50), px(-SOLD_RISE * age));
+    transform.scale = Vec2::splat(1.0 + 0.5 * (1.0 - age).powi(7));
+    color.0 = CASH.with_alpha((2.6 - 2.6 * age).min(1.0));
+    if tag.timer.is_finished() {
+      commands.entity(entity).despawn();
+    }
+  }
+}
+
 pub fn plugin(app: &mut App) {
-  app
-    .add_systems(PreStartup, load_bold)
-    .add_systems(Startup, spawn_hud)
-    .add_systems(Update, (update_hud, show_placing_hint, update_hint, update_tooltip));
+  app.add_systems(PreStartup, load_bold).add_systems(Startup, spawn_hud).add_systems(
+    Update,
+    (
+      update_hud,
+      show_placing_hint,
+      update_hint,
+      update_tooltip,
+      track_value_tags,
+      pop_sold_ores,
+      animate_sold_tags
+    )
+  );
 }

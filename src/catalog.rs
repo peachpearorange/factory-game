@@ -1,16 +1,37 @@
-use {crate::{machine::{BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
+use {crate::{machine::{ARROW_SPAN, BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
              ore::Effects,
-             sdf},
+             sdf, texture},
      avian3d::prelude::*,
      bevy::{camera::{RenderTarget, visibility::RenderLayers},
+            light::NotShadowCaster,
+            math::Affine2,
             prelude::*,
             render::render_resource::TextureFormat},
+     bevy_hanabi::{AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset,
+                   ExprWriter, HanabiPlugin, LinearDragModifier, ParticleEffect,
+                   SetAttributeModifier, SetPositionSphereModifier, ShapeDimension,
+                   SimulationSpace, SizeOverLifetimeModifier, SpawnerSettings,
+                   VectorType},
      fidget::context::Tree,
-     std::f32::consts::FRAC_PI_2};
+     std::f32::consts::{FRAC_PI_2, TAU}};
 
 pub const CELL: f32 = 2.0;
 pub const BELT_TOP: f32 = 0.22;
 const ARROWS_PER_BELT: usize = 3;
+const FURNACE_FOOT: f32 = 0.34;
+const FURNACE_MOUTH: f32 = FURNACE_FOOT + 0.52;
+const JET_HEIGHT: f32 = BELT_TOP + 0.42;
+const BONFIRE_TOP: f32 = 0.92;
+const TORCH_HEAD: f32 = 1.25;
+const LAMP_HEIGHT: f32 = 2.0;
+const FLOOD_HEIGHT: f32 = 2.5;
+const LAMP_SHADE: f32 = 0.34;
+const FLOOD_SHADE: f32 = 0.62;
+const LAMP_TILT: f32 = 0.55;
+const FLOOD_TILT: f32 = 0.65;
+const TORCH_GLOW: Color = Color::srgb(1.0, 0.66, 0.30);
+const EMBER_GLOW: Color = Color::srgb(1.0, 0.42, 0.10);
+const LAMP_GLOW: Color = Color::srgb(1.0, 0.95, 0.86);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MachineKind {
@@ -18,8 +39,36 @@ pub enum MachineKind {
   Dropper,
   Furnace,
   Forge,
+  FlameJet,
   MistCoil,
-  DecayChamber
+  DecayChamber,
+  Torch,
+  Bonfire,
+  Lamp,
+  Floodlight
+}
+
+struct Finish {
+  roughness: f32,
+  metallic: f32,
+  reflectance: f32
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Surface {
+  Painted,
+  Wood,
+  Metal
+}
+
+impl Surface {
+  const fn finish(self) -> Finish {
+    match self {
+      Self::Painted => Finish { roughness: 0.6, metallic: 0.35, reflectance: 0.5 },
+      Self::Wood => Finish { roughness: 0.88, metallic: 0.0, reflectance: 0.14 },
+      Self::Metal => Finish { roughness: 0.24, metallic: 0.95, reflectance: 0.72 }
+    }
+  }
 }
 
 pub struct MachineSpec {
@@ -52,17 +101,29 @@ impl Tier {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 6] = [
+  pub const ALL: [Self; 11] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Furnace,
     Self::Forge,
+    Self::FlameJet,
     Self::MistCoil,
-    Self::DecayChamber
+    Self::DecayChamber,
+    Self::Torch,
+    Self::Bonfire,
+    Self::Lamp,
+    Self::Floodlight
   ];
   pub const COUNT: usize = Self::ALL.len();
 
   pub const fn index(self) -> usize { self as usize }
+
+  pub const fn carries_belt(self) -> bool {
+    matches!(
+      self,
+      Self::Conveyor | Self::Forge | Self::FlameJet | Self::MistCoil | Self::DecayChamber
+    )
+  }
 
   pub const fn spec(self) -> MachineSpec {
     match self {
@@ -94,6 +155,13 @@ impl MachineKind {
         tier: Tier::Sturdy,
         unlock: None
       },
+      Self::FlameJet => MachineSpec {
+        name: "Flame Jet",
+        blurb: "Blasts a lance of fire across the belt. Whatever passes comes out burning.",
+        price: 620.0,
+        tier: Tier::Refined,
+        unlock: None
+      },
       Self::MistCoil => MachineSpec {
         name: "Mist Coil",
         blurb: "Soaks ore through. Wet things carry charge differently.",
@@ -107,6 +175,34 @@ impl MachineKind {
         price: 2200.0,
         tier: Tier::Mythic,
         unlock: Some("Burn 250 ore")
+      },
+      Self::Torch => MachineSpec {
+        name: "Torch",
+        blurb: "A burning brand on a stake. Keeps the dark off a corner of the floor.",
+        price: 40.0,
+        tier: Tier::Plain,
+        unlock: None
+      },
+      Self::Bonfire => MachineSpec {
+        name: "Bonfire",
+        blurb: "A stacked heap of branches, well alight. Warms a wide stretch of floor.",
+        price: 120.0,
+        tier: Tier::Plain,
+        unlock: None
+      },
+      Self::Lamp => MachineSpec {
+        name: "Lamp Post",
+        blurb: "Angles a tight beam across the floor. Rotate it to aim where you want.",
+        price: 180.0,
+        tier: Tier::Sturdy,
+        unlock: None
+      },
+      Self::Floodlight => MachineSpec {
+        name: "Floodlight",
+        blurb: "A taller mast with a wide, hard beam. Lights a whole bank of machines.",
+        price: 520.0,
+        tier: Tier::Refined,
+        unlock: None
       }
     }
   }
@@ -114,6 +210,7 @@ impl MachineKind {
   pub const fn upgrade(self) -> Option<Upgrader> {
     match self {
       Self::Forge => Some(Upgrader { multiplier: 2.5, effects: Effects::FIERY }),
+      Self::FlameJet => Some(Upgrader { multiplier: 3.2, effects: Effects::FIERY }),
       Self::MistCoil => Some(Upgrader { multiplier: 4.0, effects: Effects::WET }),
       Self::DecayChamber => {
         Some(Upgrader { multiplier: 9.0, effects: Effects::RADIOACTIVE })
@@ -122,18 +219,30 @@ impl MachineKind {
     }
   }
 
+  const fn surface(self) -> Surface {
+    match self {
+      Self::Torch | Self::Bonfire => Surface::Wood,
+      Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
+      _ => Surface::Painted
+    }
+  }
+
   fn accent(self) -> (Color, LinearRgba) {
     match self {
       Self::Conveyor => (Color::srgb(0.30, 0.31, 0.34), LinearRgba::BLACK),
       Self::Dropper => (Color::srgb(0.52, 0.54, 0.58), LinearRgba::BLACK),
       Self::Forge => (Color::srgb(0.44, 0.24, 0.18), LinearRgba::rgb(0.85, 0.22, 0.03)),
-      Self::Furnace => (Color::srgb(0.32, 0.15, 0.12), LinearRgba::rgb(1.30, 0.30, 0.04)),
+      Self::FlameJet => (Color::srgb(0.46, 0.47, 0.50), LinearRgba::BLACK),
+      Self::Furnace => (Color::srgb(0.30, 0.17, 0.13), LinearRgba::BLACK),
       Self::MistCoil => {
         (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
       }
       Self::DecayChamber => {
         (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
       }
+      Self::Torch | Self::Bonfire => (Color::WHITE, LinearRgba::BLACK),
+      Self::Lamp => (Color::srgb(0.62, 0.64, 0.68), LinearRgba::BLACK),
+      Self::Floodlight => (Color::srgb(0.52, 0.55, 0.60), LinearRgba::BLACK)
     }
   }
 }
@@ -177,23 +286,208 @@ fn dropper_body() -> Tree {
   ])
 }
 
-fn furnace_body() -> Tree {
-  sdf::union([
-    sdf::difference(
-      sdf::smooth_union(
+fn oven_shell() -> Tree {
+  let mouth = sdf::union([
+    sdf::at(sdf::along_x(sdf::cylinder(0.40, 1.4)), Vec3::new(0.0, FURNACE_MOUTH, 0.0)),
+    sdf::at(
+      sdf::cuboid(Vec3::new(1.4, FURNACE_MOUTH / 2.0, 0.40)),
+      Vec3::new(0.0, FURNACE_MOUTH / 2.0, 0.0)
+    )
+  ]);
+  let legs = (0..4).map(|corner| {
+    let (side, back) = ((corner % 2) as f32 * 2.0 - 1.0, (corner / 2) as f32 * 2.0 - 1.0);
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.09, FURNACE_FOOT / 2.0, 0.09), 0.04),
+      Vec3::new(0.30 + side * 0.34, FURNACE_FOOT / 2.0, back * 0.62)
+    )
+  });
+  sdf::union(
+    [
+      sdf::difference(
         sdf::at(
-          sdf::rounded_box(Vec3::new(0.88, 0.72, 0.88), 0.14),
-          Vec3::new(0.0, 0.72, 0.0)
+          sdf::rounded_box(Vec3::new(0.72, 0.62, 0.80), 0.10),
+          Vec3::new(0.32, FURNACE_FOOT + 0.62, 0.0)
         ),
-        sdf::at(sdf::sphere(0.68), Vec3::new(0.0, 1.5, 0.0)),
-        0.3
+        mouth
       ),
       sdf::at(
-        sdf::rounded_box(Vec3::new(0.55, 0.36, 0.52), 0.08),
-        Vec3::new(-0.72, 0.8, 0.0)
+        sdf::rounded_box(Vec3::new(0.86, 0.07, 0.92), 0.05),
+        Vec3::new(0.32, FURNACE_FOOT + 1.28, 0.0)
+      ),
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.46, 0.06, 0.52), 0.04),
+        Vec3::new(0.32, FURNACE_FOOT + 1.44, 0.0)
+      ),
+      sdf::at(sdf::cylinder(0.17, 0.50), Vec3::new(0.32, FURNACE_FOOT + 1.92, 0.0)),
+      sdf::at(
+        sdf::rounded_cylinder(0.25, 0.08, 0.05),
+        Vec3::new(0.32, FURNACE_FOOT + 2.40, 0.0)
+      ),
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.05, 0.05, 0.62), 0.04),
+        Vec3::new(-0.44, FURNACE_FOOT + 1.10, 0.0)
       )
+    ]
+    .into_iter()
+    .chain(legs)
+  )
+}
+
+fn bonfire_pile() -> Tree {
+  let stick = sdf::rounded_box(Vec3::new(0.07, 0.62, 0.07), 0.055);
+  let leaning = (0..7).map(|spoke| {
+    let spin = spoke as f32 * TAU / 7.0;
+    sdf::rotate_y(
+      sdf::at(sdf::rotate_z(stick.clone(), 0.42), Vec3::new(0.26, 0.50, 0.0)),
+      spin
+    )
+  });
+  let logs = (0..3).map(|log| {
+    let spin = log as f32 * TAU / 3.0 + 0.4;
+    sdf::rotate_y(
+      sdf::at(
+        sdf::along_x(sdf::rounded_cylinder(0.11, 0.66, 0.06)),
+        Vec3::new(0.0, 0.11, 0.30)
+      ),
+      spin
+    )
+  });
+  sdf::union(leaning.chain(logs))
+}
+
+fn jet_nozzle() -> Tree {
+  sdf::union([
+    belt_deck(),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.34, 0.46, 0.30), 0.09),
+      Vec3::new(0.0, 0.46, -1.12)
     ),
-    sdf::at(sdf::cylinder(0.2, 0.55), Vec3::new(0.0, 2.35, 0.0))
+    sdf::at(
+      sdf::along_z(sdf::rounded_cylinder(0.17, 0.34, 0.06)),
+      Vec3::new(0.0, JET_HEIGHT, -0.74)
+    ),
+    sdf::at(sdf::along_z(sdf::cylinder(0.09, 0.22)), Vec3::new(0.0, JET_HEIGHT, -0.36)),
+    sdf::at(sdf::cylinder(0.13, 0.55), Vec3::new(0.0, 1.30, -1.12)),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.30, 0.12, 0.12), 0.06),
+      Vec3::new(0.0, 1.85, -1.12)
+    )
+  ])
+}
+
+fn torch_post() -> Tree {
+  sdf::union([
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.06, TORCH_HEAD / 2.0, 0.06), 0.045),
+      Vec3::new(0.0, TORCH_HEAD / 2.0, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.13, 0.15, 0.13), 0.09),
+      Vec3::new(0.0, TORCH_HEAD, 0.0)
+    )
+  ])
+}
+
+fn fire_gradient() -> bevy_hanabi::Gradient<Vec4> {
+  bevy_hanabi::Gradient::from_keys([
+    (0.0, Vec4::new(5.0, 2.6, 0.7, 1.0)),
+    (0.3, Vec4::new(3.4, 1.1, 0.16, 1.0)),
+    (0.7, Vec4::new(1.3, 0.28, 0.04, 0.7)),
+    (1.0, Vec4::new(0.35, 0.05, 0.02, 0.0))
+  ])
+}
+
+struct Flame {
+  name: &'static str,
+  thrust: Vec3,
+  spread: f32,
+  girth: f32,
+  life: f32,
+  rate: f32
+}
+
+impl Flame {
+  const TORCH: Self = Self {
+    name: "torch flame",
+    thrust: Vec3::new(0.0, 1.5, 0.0),
+    spread: 0.22,
+    girth: 0.17,
+    life: 0.85,
+    rate: 160.0
+  };
+  const BONFIRE: Self = Self {
+    name: "bonfire",
+    thrust: Vec3::new(0.0, 2.4, 0.0),
+    spread: 0.55,
+    girth: 0.44,
+    life: 1.15,
+    rate: 420.0
+  };
+  const JET: Self = Self {
+    name: "flame jet",
+    thrust: Vec3::new(0.0, 0.45, 6.2),
+    spread: 0.42,
+    girth: 0.26,
+    life: 0.42,
+    rate: 900.0
+  };
+
+  fn asset(self) -> EffectAsset {
+    let writer = ExprWriter::new();
+    let drift = (writer.rand(VectorType::VEC3F) * writer.lit(2.0) - writer.lit(1.0))
+      * writer.lit(self.spread);
+    let init_pos = SetPositionSphereModifier {
+      center: writer.lit(Vec3::ZERO).expr(),
+      radius: writer.lit(self.girth * 0.5).expr(),
+      dimension: ShapeDimension::Volume
+    };
+    let init_vel = SetAttributeModifier::new(
+      Attribute::VELOCITY,
+      (drift + writer.lit(self.thrust)).expr()
+    );
+    let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.0).expr());
+    let init_lifetime = SetAttributeModifier::new(
+      Attribute::LIFETIME,
+      writer.lit(self.life * 0.6).uniform(writer.lit(self.life)).expr()
+    );
+    let drag = LinearDragModifier::new(writer.lit(1.2).expr());
+    let lift = AccelModifier::new(writer.lit(Vec3::Y * 1.1).expr());
+    let size = SizeOverLifetimeModifier {
+      gradient: bevy_hanabi::Gradient::from_keys([
+        (0.0, Vec3::splat(self.girth)),
+        (0.35, Vec3::splat(self.girth * 0.82)),
+        (1.0, Vec3::ZERO)
+      ]),
+      screen_space_size: false
+    };
+
+    EffectAsset::new(4096, SpawnerSettings::rate(self.rate.into()), writer.finish())
+      .with_name(self.name)
+      .with_simulation_space(SimulationSpace::Local)
+      .with_alpha_mode(bevy_hanabi::AlphaMode::Add)
+      .init(init_pos)
+      .init(init_vel)
+      .init(init_age)
+      .init(init_lifetime)
+      .update(drag)
+      .update(lift)
+      .render(ColorOverLifetimeModifier::new(fire_gradient()))
+      .render(size)
+  }
+}
+
+fn lamp_post(height: f32, shade: f32, tilt: f32) -> Tree {
+  let hood = sdf::difference(
+    sdf::rounded_cylinder(shade, 0.26, 0.1),
+    sdf::at(sdf::cylinder(shade * 0.84, 0.2), Vec3::new(0.0, -0.24, 0.0))
+  );
+  sdf::union([
+    sdf::at(sdf::rounded_cylinder(shade * 0.62, 0.08, 0.06), Vec3::new(0.0, 0.08, 0.0)),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.1, height / 2.0, 0.1), 0.035),
+      Vec3::new(0.0, height / 2.0, 0.0)
+    ),
+    sdf::at(sdf::rotate_z(hood, tilt), Vec3::new(0.0, height, 0.0))
   ])
 }
 
@@ -203,6 +497,14 @@ pub struct MachineAssets {
   materials: [Handle<StandardMaterial>; MachineKind::COUNT],
   arrow_mesh: Handle<Mesh>,
   arrow_material: Handle<StandardMaterial>,
+  glow_mesh: Handle<Mesh>,
+  torch_glow: Handle<StandardMaterial>,
+  torch_flame: Handle<EffectAsset>,
+  bonfire_flame: Handle<EffectAsset>,
+  jet_flame: Handle<EffectAsset>,
+  ember_mesh: Handle<Mesh>,
+  ember_glow: Handle<StandardMaterial>,
+  lamp_glow: Handle<StandardMaterial>,
   pub ghost_valid: Handle<StandardMaterial>,
   pub ghost_blocked: Handle<StandardMaterial>
 }
@@ -216,7 +518,12 @@ impl MachineAssets {
     match kind {
       MachineKind::Conveyor => belt_deck(),
       MachineKind::Dropper => dropper_body(),
-      MachineKind::Furnace => furnace_body(),
+      MachineKind::Furnace => oven_shell(),
+      MachineKind::FlameJet => jet_nozzle(),
+      MachineKind::Torch => torch_post(),
+      MachineKind::Bonfire => bonfire_pile(),
+      MachineKind::Lamp => lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT),
+      MachineKind::Floodlight => lamp_post(FLOOD_HEIGHT, FLOOD_SHADE, FLOOD_TILT),
       _ => arch()
     }
   }
@@ -235,7 +542,8 @@ fn load_machine_assets(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
-  mut images: ResMut<Assets<Image>>
+  mut images: ResMut<Assets<Image>>,
+  mut effects: ResMut<Assets<EffectAsset>>
 ) {
   let ghost = |color: Color| StandardMaterial {
     base_color: color,
@@ -250,13 +558,19 @@ fn load_machine_assets(
       sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7)
     ))
   });
+  let grain = images.add(texture::wood());
   let machine_materials = MachineKind::ALL.map(|kind| {
     let (base_color, emissive) = kind.accent();
+    let surface = kind.surface();
+    let Finish { roughness, metallic, reflectance } = surface.finish();
     materials.add(StandardMaterial {
       base_color,
       emissive,
-      perceptual_roughness: 0.6,
-      metallic: 0.35,
+      base_color_texture: (surface == Surface::Wood).then(|| grain.clone()),
+      uv_transform: Affine2::from_scale(Vec2::ONE / texture::GRAIN),
+      perceptual_roughness: roughness,
+      reflectance,
+      metallic,
       ..default()
     })
   });
@@ -270,7 +584,7 @@ fn load_machine_assets(
     ));
     let layer = RenderLayers::layer(kind.index() + 1);
     let stage = Vec3::new(0.0, -600.0 - 40.0 * kind.index() as f32, 0.0);
-    let focus = stage + Vec3::Y * 1.3;
+    let focus = stage + Vec3::Y * 1.5;
 
     commands.spawn((
       Mesh3d(machine_meshes[kind.index()].clone()),
@@ -321,9 +635,45 @@ fn load_machine_assets(
       cull_mode: None,
       ..default()
     }),
+    glow_mesh: meshes.add(Sphere::new(1.0).mesh().ico(3).expect("glow mesh")),
+    torch_glow: materials.add(StandardMaterial {
+      base_color: TORCH_GLOW,
+      emissive: LinearRgba::rgb(46.0, 15.0, 2.2),
+      ..default()
+    }),
+    torch_flame: effects.add(Flame::TORCH.asset()),
+    bonfire_flame: effects.add(Flame::BONFIRE.asset()),
+    jet_flame: effects.add(Flame::JET.asset()),
+    ember_mesh: meshes.add(Sphere::new(1.0).mesh().ico(2).expect("ember mesh")),
+    ember_glow: materials.add(StandardMaterial {
+      base_color: EMBER_GLOW,
+      emissive: LinearRgba::rgb(14.0, 3.4, 0.35),
+      ..default()
+    }),
+    lamp_glow: materials.add(StandardMaterial {
+      base_color: LAMP_GLOW,
+      emissive: LinearRgba::rgb(38.0, 34.0, 25.0),
+      ..default()
+    }),
     ghost_valid: materials.add(ghost(Color::srgba(0.25, 0.95, 0.45, 0.35))),
     ghost_blocked: materials.add(ghost(Color::srgba(0.95, 0.25, 0.25, 0.30)))
   });
+}
+
+fn arrow_at(assets: &MachineAssets, slide: f32) -> impl Bundle {
+  (
+    Mesh3d(assets.arrow_mesh.clone()),
+    MeshMaterial3d(assets.arrow_material.clone()),
+    Transform::from_xyz(slide * ARROW_SPAN, BELT_TOP + 0.02, 0.0)
+      .with_rotation(Quat::from_rotation_x(-FRAC_PI_2))
+  )
+}
+
+pub fn spawn_ghost_arrows(commands: &mut Commands, assets: &MachineAssets, root: Entity) {
+  for step in 0..ARROWS_PER_BELT {
+    let slide = step as f32 / (ARROWS_PER_BELT - 1) as f32 - 0.5;
+    commands.spawn((arrow_at(assets, slide), ChildOf(root)));
+  }
 }
 
 pub fn place(
@@ -354,13 +704,101 @@ pub fn place(
       });
     }
     MachineKind::Furnace => {
-      parts.push((Collider::cuboid(1.0, 2.0, 1.8), Transform::from_xyz(0.5, 1.0, 0.0)));
+      parts.push((
+        Collider::cuboid(1.5, 2.6, 1.7),
+        Transform::from_xyz(0.57, FURNACE_FOOT + 1.3, 0.0)
+      ));
       commands.spawn((
         Furnace,
-        Collider::cuboid(1.9, 1.1, 1.7),
+        Collider::cuboid(1.2, 0.76, 0.76),
         Sensor,
         CollisionEventsEnabled,
-        Transform::from_xyz(0.0, BELT_TOP + 0.45, 0.0),
+        Mesh3d(assets.ember_mesh.clone()),
+        MeshMaterial3d(assets.ember_glow.clone()),
+        NotShadowCaster,
+        PointLight { color: EMBER_GLOW, intensity: 700_000.0, range: 14.0, ..default() },
+        Transform::from_xyz(-0.15, FURNACE_MOUTH, 0.0)
+          .with_scale(Vec3::new(0.52, 0.34, 0.36)),
+        ChildOf(root)
+      ));
+    }
+    MachineKind::Bonfire => {
+      parts.push((
+        Collider::cylinder(0.62, BONFIRE_TOP),
+        Transform::from_xyz(0.0, BONFIRE_TOP / 2.0, 0.0)
+      ));
+      commands.spawn((
+        PointLight {
+          color: TORCH_GLOW,
+          intensity: 4_200_000.0,
+          range: 40.0,
+          ..default()
+        },
+        Mesh3d(assets.glow_mesh.clone()),
+        MeshMaterial3d(assets.torch_glow.clone()),
+        NotShadowCaster,
+        Transform::from_xyz(0.0, BONFIRE_TOP * 0.7, 0.0).with_scale(Vec3::splat(0.26)),
+        ChildOf(root)
+      ));
+      commands.spawn((
+        ParticleEffect::new(assets.bonfire_flame.clone()),
+        Transform::from_xyz(0.0, BONFIRE_TOP * 0.55, 0.0),
+        ChildOf(root)
+      ));
+    }
+    MachineKind::Torch => {
+      parts.push((
+        Collider::cylinder(0.2, TORCH_HEAD + 0.3),
+        Transform::from_xyz(0.0, (TORCH_HEAD + 0.3) / 2.0, 0.0)
+      ));
+      commands.spawn((
+        PointLight {
+          color: TORCH_GLOW,
+          intensity: 1_400_000.0,
+          range: 26.0,
+          ..default()
+        },
+        Mesh3d(assets.glow_mesh.clone()),
+        MeshMaterial3d(assets.torch_glow.clone()),
+        NotShadowCaster,
+        Transform::from_xyz(0.0, TORCH_HEAD + 0.2, 0.0)
+          .with_scale(Vec3::new(0.11, 0.15, 0.11)),
+        ChildOf(root)
+      ));
+      commands.spawn((
+        ParticleEffect::new(assets.torch_flame.clone()),
+        Transform::from_xyz(0.0, TORCH_HEAD + 0.12, 0.0),
+        ChildOf(root)
+      ));
+    }
+    MachineKind::Lamp | MachineKind::Floodlight => {
+      let wide = kind == MachineKind::Floodlight;
+      let height = wide.then_some(FLOOD_HEIGHT).unwrap_or(LAMP_HEIGHT);
+      let shade = wide.then_some(FLOOD_SHADE).unwrap_or(LAMP_SHADE);
+      let tilt = wide.then_some(FLOOD_TILT).unwrap_or(LAMP_TILT);
+      let beam = Vec3::new(tilt.sin(), -tilt.cos(), 0.0);
+      parts.push((
+        Collider::cylinder(shade, height + 0.5),
+        Transform::from_xyz(0.0, (height + 0.5) / 2.0, 0.0)
+      ));
+      commands.spawn((
+        SpotLight {
+          color: LAMP_GLOW,
+          intensity: wide.then_some(9_000_000.0).unwrap_or(3_200_000.0),
+          range: wide.then_some(70.0).unwrap_or(34.0),
+          inner_angle: wide.then_some(0.30).unwrap_or(0.18),
+          outer_angle: wide.then_some(0.62).unwrap_or(0.42),
+          shadow_maps_enabled: true,
+          shadow_depth_bias: 0.1,
+          shadow_normal_bias: 3.4,
+          ..default()
+        },
+        Mesh3d(assets.glow_mesh.clone()),
+        MeshMaterial3d(assets.lamp_glow.clone()),
+        NotShadowCaster,
+        Transform::from_translation(Vec3::new(0.0, height, 0.0) + beam * 0.24)
+          .looking_to(beam, Vec3::Y)
+          .with_scale(Vec3::new(shade * 0.78, shade * 0.78, shade * 0.4)),
         ChildOf(root)
       ));
     }
@@ -381,20 +819,31 @@ pub fn place(
       for step in 0..ARROWS_PER_BELT {
         commands.spawn((
           BeltArrow(step as f32 / ARROWS_PER_BELT as f32),
-          Mesh3d(assets.arrow_mesh.clone()),
-          MeshMaterial3d(assets.arrow_material.clone()),
-          Transform::from_xyz(0.0, BELT_TOP + 0.02, 0.0)
-            .with_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
+          arrow_at(assets, 0.0),
           ChildOf(root)
         ));
       }
       if let Some(upgrader) = kind.upgrade() {
-        parts
-          .push((Collider::cuboid(1.04, 2.5, 0.5), Transform::from_xyz(0.0, 1.05, 0.87)));
-        parts.push((
-          Collider::cuboid(1.04, 2.5, 0.5),
-          Transform::from_xyz(0.0, 1.05, -0.87)
-        ));
+        if kind == MachineKind::FlameJet {
+          parts.push((
+            Collider::cuboid(0.8, 2.0, 0.7),
+            Transform::from_xyz(0.0, 1.0, -1.12)
+          ));
+          commands.spawn((
+            ParticleEffect::new(assets.jet_flame.clone()),
+            Transform::from_xyz(0.0, JET_HEIGHT, -0.26),
+            ChildOf(root)
+          ));
+        } else {
+          parts.push((
+            Collider::cuboid(1.04, 2.5, 0.5),
+            Transform::from_xyz(0.0, 1.05, 0.87)
+          ));
+          parts.push((
+            Collider::cuboid(1.04, 2.5, 0.5),
+            Transform::from_xyz(0.0, 1.05, -0.87)
+          ));
+        }
         commands.spawn((
           upgrader,
           Collider::cuboid(0.5, 0.8, 1.5),
@@ -413,4 +862,6 @@ pub fn place(
   root
 }
 
-pub fn plugin(app: &mut App) { app.add_systems(PreStartup, load_machine_assets); }
+pub fn plugin(app: &mut App) {
+  app.add_plugins(HanabiPlugin).add_systems(PreStartup, load_machine_assets);
+}

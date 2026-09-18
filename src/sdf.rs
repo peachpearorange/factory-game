@@ -46,10 +46,21 @@ pub fn along_z(shape: Tree) -> Tree {
   shape.remap_xyz(x, z, y)
 }
 
+pub fn along_x(shape: Tree) -> Tree {
+  let (x, y, z) = Tree::axes();
+  shape.remap_xyz(y, x, z)
+}
+
 pub fn rotate_y(shape: Tree, angle: f32) -> Tree {
   let (x, y, z) = Tree::axes();
   let (sin, cos) = (f64::from(angle.sin()), f64::from(angle.cos()));
   shape.remap_xyz(x.clone() * cos + z.clone() * sin, y, z * cos - x * sin)
+}
+
+pub fn rotate_z(shape: Tree, angle: f32) -> Tree {
+  let (x, y, z) = Tree::axes();
+  let (sin, cos) = (f64::from(angle.sin()), f64::from(angle.cos()));
+  shape.remap_xyz(x.clone() * cos + y.clone() * sin, y * cos - x * sin, z)
 }
 
 pub fn at(shape: Tree, offset: Vec3) -> Tree {

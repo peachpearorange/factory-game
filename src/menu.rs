@@ -68,12 +68,10 @@ fn spawn_menu(mut commands: Commands) {
                 align_items: AlignItems::Center,
                 row_gap: px(9),
                 padding: UiRect::all(px(24)),
-                border: UiRect::all(px(1)),
                 border_radius: BorderRadius::all(px(14)),
                 ..default()
             },
             BackgroundColor(Color::srgba(0.03, 0.04, 0.07, 0.97)),
-            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.18)),
             children![
                 label("Paused", 30.0, BRIGHT),
                 (

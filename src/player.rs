@@ -82,7 +82,7 @@ impl Default for CameraRig {
       pitch_speed: 0.0037,
       zoom_speed: 2.8,
       zoom_range: 3.5..34.0,
-      pitch_range: -1.15..0.62
+      pitch_range: -1.55..0.62
     }
   }
 }
@@ -194,8 +194,7 @@ fn spawn_player(
           Mesh3d(lens.clone()),
           MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(1.0, 0.97, 0.86),
-            emissive: LinearRgba::rgb(22.0, 19.0, 11.0),
-            unlit: true,
+            emissive: LinearRgba::rgb(40.0, 34.0, 20.0),
             ..default()
           })),
           NotShadowCaster,

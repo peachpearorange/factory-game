@@ -17,9 +17,10 @@ avoid comments. just have code self-explanatory by names and structure. concise.
 # Notes
 `world::GROUND` is y = 0, the exact top of the concrete platform. Author every shape and spawn position relative to it so meshes rest on the ground.
 
-Env vars, both inert when unset:
+Env vars, all inert when unset:
 - `FACTORY_SHOT=<secs>` — take a screenshot at that elapsed time, then exit. Lands in `screenshots/`.
 - `FACTORY_DAY=<secs>` — length of one day/night cycle, default 240.
+- `FACTORY_TIME=<secs>` — how far into the cycle the game starts. 0 is sunrise, a quarter of `FACTORY_DAY` is noon, three quarters is midnight.
 
-So `FACTORY_DAY=24 FACTORY_SHOT=5 cargo run` gives a daylight screenshot without waiting or pressing anything, and `FACTORY_SHOT=17` on the same short day gives a night one.
+So `FACTORY_DAY=24 FACTORY_TIME=6 FACTORY_SHOT=2 cargo run` gives a noon screenshot straight away, and `FACTORY_TIME=17` gives a night one without waiting through the day.
 
