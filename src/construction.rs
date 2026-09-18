@@ -28,7 +28,8 @@ pub enum BuildMode {
   Placing {
     kind: MachineKind,
     turns: u8
-  }
+  },
+  Deleting
 }
 
 #[derive(Resource)]
@@ -106,12 +107,12 @@ fn aimed_cell(ray: Ray3d) -> Option<IVec2> {
 }
 
 fn steer_build(keys: Res<ButtonInput<KeyCode>>, mut mode: ResMut<BuildMode>) {
-  if let BuildMode::Placing { kind, turns } = *mode {
-    if keys.just_pressed(KeyCode::KeyR) {
-      *mode = BuildMode::Placing { kind, turns: (turns + 1) % 4 };
-    } else if keys.just_pressed(KeyCode::KeyQ) {
-      *mode = BuildMode::Idle;
-    }
+  if let BuildMode::Placing { kind, turns } = *mode
+    && keys.just_pressed(KeyCode::KeyR)
+  {
+    *mode = BuildMode::Placing { kind, turns: (turns + 1) % 4 };
+  } else if *mode != BuildMode::Idle && keys.just_pressed(KeyCode::KeyQ) {
+    *mode = BuildMode::Idle;
   }
 }
 
@@ -184,7 +185,6 @@ fn place_machine(
 }
 
 fn take_machine(
-  keys: Res<ButtonInput<KeyCode>>,
   mouse: Res<ButtonInput<MouseButton>>,
   hovering: Res<UiHover>,
   spatial: SpatialQuery,
@@ -199,10 +199,11 @@ fn take_machine(
   mut commands: Commands
 ) {
   let (camera, transform) = *eye;
-  let returning = keys.just_pressed(KeyCode::KeyX);
-  let grabbing = *mode == BuildMode::Idle && mouse.just_pressed(MouseButton::Left);
+  let grabbing = *mode == BuildMode::Idle;
   if !hovering.0
-    && (returning || grabbing)
+    && (grabbing || *mode == BuildMode::Deleting)
+    && !mode.is_changed()
+    && mouse.just_pressed(MouseButton::Left)
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(hit) = aimed_entity(&spatial, ray, *player)
     && let Some(root) = machine_root(hit, &parents, &machines)
@@ -211,7 +212,7 @@ fn take_machine(
     inventory.add(kind);
     grid.0.remove(&cell);
     commands.entity(root).despawn();
-    if !returning {
+    if grabbing {
       *mode = BuildMode::Placing { kind, turns };
     }
   }

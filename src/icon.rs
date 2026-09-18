@@ -108,6 +108,13 @@ pub fn lock(color: Color) -> impl Bundle {
   ])
 }
 
+pub fn cross(color: Color) -> impl Bundle {
+  glyph(children![
+    turned(fill(2.0, 8.6, 16.0, 2.8, 1.4, color), 45.0),
+    turned(fill(2.0, 8.6, 16.0, 2.8, 1.4, color), -45.0),
+  ])
+}
+
 pub fn flame(color: Color) -> impl Bundle {
   glyph(children![turned(
     (

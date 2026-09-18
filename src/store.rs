@@ -14,6 +14,9 @@ const GRANTED: Color = Color::srgb(0.48, 0.96, 0.52);
 const DENIED: Color = Color::srgb(1.0, 0.56, 0.30);
 const SEALED: Color = Color::srgb(0.66, 0.72, 0.86);
 const SHOT_TINT: Color = Color::srgb(0.99, 0.78, 0.34);
+const DELETE_TINT: Color = Color::srgb(0.98, 0.31, 0.29);
+const ARMED: Color = Color::srgb(0.32, 0.07, 0.08);
+const RESTING: Color = Color::srgb(0.07, 0.08, 0.11);
 const INK: Color = Color::srgb(0.06, 0.06, 0.07);
 const MUTED: Color = Color::srgb(0.42, 0.44, 0.48);
 const BUTTON: f32 = 72.0;
@@ -56,6 +59,9 @@ struct CountLabel(MachineKind);
 
 #[derive(Component)]
 struct StoreToggle;
+
+#[derive(Component)]
+struct DeleteToggle;
 
 #[derive(Component)]
 struct InventoryToggle;
@@ -229,7 +235,7 @@ fn toggle_button(
       border_radius: BorderRadius::all(px(13)),
       ..default()
     },
-    BackgroundColor(Color::srgb(0.07, 0.08, 0.11)),
+    BackgroundColor(RESTING),
     children![icon::scaled(glyph, GLYPH_SCALE), label(caption, 14.0, tint)]
   )
 }
@@ -240,7 +246,7 @@ fn spawn_toolbar(mut commands: Commands) {
             position_type: PositionType::Absolute,
             bottom: px(18),
             left: percent(50),
-            margin: UiRect::left(px(-((BUTTON * 3.0 + 24.0) / 2.0))),
+            margin: UiRect::left(px(-((BUTTON * 4.0 + 36.0) / 2.0))),
             column_gap: px(12),
             ..default()
         },
@@ -258,6 +264,16 @@ fn spawn_toolbar(mut commands: Commands) {
             (
                 StoreToggle,
                 toggle_button(icon::store(STORE_TINT), "Store", "STORE", "F", STORE_TINT),
+            ),
+            (
+                DeleteToggle,
+                toggle_button(
+                    icon::cross(DELETE_TINT),
+                    "Delete mode",
+                    "CLEAR",
+                    "X",
+                    DELETE_TINT,
+                ),
             ),
             (
                 ScreenshotButton,
@@ -300,6 +316,20 @@ fn toggle_panels(
   }
 }
 
+fn toggle_delete_mode(
+  keys: Res<ButtonInput<KeyCode>>,
+  toggle: Query<&Interaction, (With<DeleteToggle>, Changed<Interaction>)>,
+  mut mode: ResMut<BuildMode>
+) {
+  if keys.just_pressed(KeyCode::KeyX)
+    || toggle.iter().any(|state| *state == Interaction::Pressed)
+  {
+    *mode = (*mode == BuildMode::Deleting)
+      .then_some(BuildMode::Idle)
+      .unwrap_or(BuildMode::Deleting);
+  }
+}
+
 fn track_ui_hover(buttons: Query<&Interaction>, mut hovering: ResMut<UiHover>) {
   hovering.0 = buttons.iter().any(|state| *state != Interaction::None);
 }
@@ -308,6 +338,8 @@ fn refresh_panels(
   panels: Res<Panels>,
   inventory: Res<Inventory>,
   money: Res<Money>,
+  mode: Res<BuildMode>,
+  mut delete: Single<&mut BackgroundColor, (With<DeleteToggle>, Without<BuyTile>)>,
   mut store_panel: Single<&mut Node, (With<StorePanel>, Without<InventoryPanel>)>,
   mut stock_panel: Single<&mut Node, (With<InventoryPanel>, Without<StorePanel>)>,
   mut entries: Query<
@@ -321,6 +353,7 @@ fn refresh_panels(
   let shown = |open: bool| open.then_some(Display::Flex).unwrap_or(Display::None);
   store_panel.display = shown(panels.store);
   stock_panel.display = shown(panels.inventory);
+  delete.0 = (*mode == BuildMode::Deleting).then_some(ARMED).unwrap_or(RESTING);
 
   for (PriceLabel(kind), mut text) in &mut prices {
     let spec = kind.spec();
@@ -410,7 +443,14 @@ pub fn plugin(app: &mut App) {
     .add_systems(Startup, (spawn_panels, spawn_toolbar))
     .add_systems(
       Update,
-      (toggle_panels, buy_machines, select_machines, track_ui_hover, refresh_panels)
+      (
+        toggle_panels,
+        toggle_delete_mode,
+        buy_machines,
+        select_machines,
+        track_ui_hover,
+        refresh_panels
+      )
         .chain()
         .run_if(playing)
     )

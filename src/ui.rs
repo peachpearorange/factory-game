@@ -43,7 +43,10 @@ struct TooltipBody;
 struct EffectIcon(Effects);
 
 #[derive(Component)]
-struct PlacingHint;
+struct ModeHint;
+
+#[derive(Component)]
+struct ModeHintText;
 
 #[derive(Component)]
 struct Hint;
@@ -145,18 +148,18 @@ fn spawn_hud(mut commands: Commands) {
           (label("Ore  0 / 0", 13.0, BRIGHT), OreMeterLabel),
         ],
       ),
-      label("Right-drag to look    Click a machine to move it    X stores it", 12.0, DIM),
+      label("Right-drag to look    Click a machine to move it    X to delete", 12.0, DIM),
     ]
   ));
 
   commands.spawn((
-    PlacingHint,
+    ModeHint,
     Node {
       position_type: PositionType::Absolute,
       bottom: px(100),
       left: percent(50),
-      margin: UiRect::left(px(-130)),
-      width: px(260),
+      margin: UiRect::left(px(-170)),
+      width: px(340),
       justify_content: JustifyContent::Center,
       padding: UiRect::all(px(9)),
       border_radius: BorderRadius::all(px(8)),
@@ -164,7 +167,7 @@ fn spawn_hud(mut commands: Commands) {
       ..default()
     },
     BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.85)),
-    children![label("R to rotate     Q to cancel", 13.0, BRIGHT)]
+    children![(label("", 13.0, BRIGHT), ModeHintText)]
   ));
 
   commands.spawn((Tooltip, floating(172.0, 330.0), children![
@@ -202,13 +205,20 @@ fn update_hud(
   ***cash = format!("${:.0}", money.0);
 }
 
-fn show_placing_hint(
+fn show_mode_hint(
   mode: Res<BuildMode>,
-  mut hint: Single<&mut Node, With<PlacingHint>>
+  mut hint: Single<&mut Node, With<ModeHint>>,
+  mut text: Single<&mut Text, With<ModeHintText>>
 ) {
-  hint.display = matches!(*mode, BuildMode::Placing { .. })
-    .then_some(Display::Flex)
-    .unwrap_or(Display::None);
+  let message = match *mode {
+    BuildMode::Idle => None,
+    BuildMode::Placing { .. } => Some("R to rotate     Q to cancel"),
+    BuildMode::Deleting => Some("Click a machine to store it     X or Q to stop")
+  };
+  hint.display = message.map(|_| Display::Flex).unwrap_or(Display::None);
+  if let Some(line) = message {
+    ***text = line.to_string();
+  }
 }
 
 fn update_hint(
@@ -242,7 +252,8 @@ fn update_tooltip(
   mut body: Single<&mut Text, (With<TooltipBody>, Without<TooltipTitle>)>
 ) {
   let (camera, transform) = *eye;
-  let looked_at = (!hovering.0 && *mode == BuildMode::Idle)
+  let deleting = *mode == BuildMode::Deleting;
+  let looked_at = (!hovering.0 && (*mode == BuildMode::Idle || deleting))
     .then(|| aim_ray(camera, transform, *window))
     .flatten()
     .and_then(|ray| aimed_entity(&spatial, ray, *player));
@@ -265,7 +276,13 @@ fn update_tooltip(
             let spec = machine.kind.spec();
             (
               spec.name.to_string(),
-              format!("{}\nClick to pick it up.  X stores it.", spec.blurb),
+              format!(
+                "{}\n{}",
+                spec.blurb,
+                deleting
+                  .then_some("Click to store it.")
+                  .unwrap_or("Click to pick it up.")
+              ),
               Effects::NONE
             )
           })
@@ -407,7 +424,7 @@ pub fn plugin(app: &mut App) {
     Update,
     (
       update_hud,
-      show_placing_hint,
+      show_mode_hint,
       update_hint,
       update_tooltip,
       track_value_tags,
