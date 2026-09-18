@@ -4,7 +4,8 @@ use {crate::{construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity,
              machine::{Money, OreSold},
              ore::{Effects, Ore, OreLimit},
              player::{MainCamera, Player, UiHover},
-             store::HoverInfo},
+             store::HoverInfo,
+             style::{self, Bold, heavy, label}},
      avian3d::prelude::*,
      bevy::{ecs::entity::EntityHashSet, prelude::*}};
 
@@ -13,13 +14,6 @@ const TAG_RANGE: f32 = 30.0;
 const TAG_LIFT: f32 = 0.62;
 const SOLD_LIFE: f32 = 1.1;
 const SOLD_RISE: f32 = 78.0;
-pub const DIM: Color = Color::srgb(0.55, 0.58, 0.63);
-const READABLE: Color = Color::srgb(0.87, 0.90, 0.94);
-pub const BRIGHT: Color = Color::srgb(0.93, 0.94, 0.96);
-const FIRE: Color = Color::srgb(1.0, 0.45, 0.15);
-const CASH: Color = Color::srgb(0.58, 0.99, 0.62);
-const WATER: Color = Color::srgb(0.35, 0.65, 1.0);
-const DECAY: Color = Color::srgb(0.45, 0.95, 0.35);
 
 #[derive(Component)]
 struct OreMeterFill;
@@ -57,35 +51,6 @@ struct HintTitle;
 #[derive(Component)]
 struct HintDetail;
 
-#[derive(Resource)]
-pub struct Bold(pub Handle<Font>);
-
-fn load_bold(mut commands: Commands, assets: Res<AssetServer>) {
-  commands.insert_resource(Bold(assets.load("fonts/NotoSans-Bold.ttf")));
-}
-
-const TEXT_SCALE: f32 = 1.14;
-
-pub fn label(text: &str, size: f32, color: Color) -> impl Bundle {
-  (
-    Text::new(text),
-    TextFont { font_size: FontSize::Px(size * TEXT_SCALE), ..default() },
-    TextColor(color)
-  )
-}
-
-pub fn heavy(text: &str, size: f32, color: Color, bold: &Bold) -> impl Bundle {
-  (
-    Text::new(text),
-    TextFont {
-      font: FontSource::Handle(bold.0.clone()),
-      font_size: FontSize::Px(size * TEXT_SCALE),
-      ..default()
-    },
-    TextColor(color)
-  )
-}
-
 fn floating(bottom: f32, width: f32) -> impl Bundle {
   (
     Node {
@@ -102,7 +67,7 @@ fn floating(bottom: f32, width: f32) -> impl Bundle {
       display: Display::None,
       ..default()
     },
-    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.9))
+    BackgroundColor(style::POPUP)
   )
 }
 
@@ -118,9 +83,9 @@ fn spawn_hud(mut commands: Commands) {
       border_radius: BorderRadius::all(px(8)),
       ..default()
     },
-    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.62)),
+    BackgroundColor(style::POPUP),
     children![
-      (label("$0", 26.0, BRIGHT), MoneyLabel),
+      (label("$0", style::READOUT), MoneyLabel),
       (
         Node {
           width: px(METER_WIDTH),
@@ -131,7 +96,7 @@ fn spawn_hud(mut commands: Commands) {
           overflow: Overflow::clip(),
           ..default()
         },
-        BackgroundColor(Color::srgb(0.10, 0.11, 0.13)),
+        BackgroundColor(style::SLOT),
         children![
           (
             Node {
@@ -142,13 +107,16 @@ fn spawn_hud(mut commands: Commands) {
               width: percent(0),
               ..default()
             },
-            BackgroundColor(Color::srgb(0.98, 0.70, 0.16)),
+            BackgroundColor(style::ORE),
             OreMeterFill,
           ),
-          (label("Ore  0 / 0", 13.0, BRIGHT), OreMeterLabel),
+          (label("Ore  0 / 0", style::SMALL), OreMeterLabel),
         ],
       ),
-      label("Right-drag to look    Click a machine to move it    X to delete", 12.0, DIM),
+      label(
+        "Right-drag to look    Click a machine to move it    X to delete",
+        style::TINY
+      ),
     ]
   ));
 
@@ -166,26 +134,26 @@ fn spawn_hud(mut commands: Commands) {
       display: Display::None,
       ..default()
     },
-    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.85)),
-    children![(label("", 13.0, BRIGHT), ModeHintText)]
+    BackgroundColor(style::POPUP),
+    children![(label("", style::SMALL), ModeHintText)]
   ));
 
   commands.spawn((Tooltip, floating(172.0, 330.0), children![
     (
       Node { align_items: AlignItems::Center, column_gap: px(6), ..default() },
       children![
-        (icon::flame(FIRE), EffectIcon(Effects::FIERY)),
-        (icon::droplet(WATER), EffectIcon(Effects::WET)),
-        (icon::radiation(DECAY), EffectIcon(Effects::RADIOACTIVE)),
-        (label("", 17.0, BRIGHT), TooltipTitle),
+        (icon::flame(style::FIRE), EffectIcon(Effects::FIERY)),
+        (icon::droplet(style::WATER), EffectIcon(Effects::WET)),
+        (icon::radiation(style::DECAY), EffectIcon(Effects::RADIOACTIVE)),
+        (label("", style::BODY), TooltipTitle),
       ],
     ),
-    (label("", 13.0, DIM), TooltipBody),
+    (label("", style::SMALL), TooltipBody),
   ]));
 
   commands.spawn((Hint, floating(100.0, 272.0), children![
-    (label("", 15.0, BRIGHT), HintTitle),
-    (label("", 13.0, READABLE), HintDetail),
+    (label("", style::BODY), HintTitle),
+    (label("", style::SMALL), HintDetail),
   ]));
 }
 
@@ -327,7 +295,7 @@ fn pinned(at: Vec2) -> impl Bundle {
       ..default()
     },
     UiTransform { translation: Val2::new(percent(-50), percent(-100)), ..default() },
-    BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.66))
+    BackgroundColor(style::TAG)
   )
 }
 
@@ -368,7 +336,7 @@ fn track_value_tags(
       commands.spawn((
         ValueTag(entity),
         pinned(at),
-        label(&money(ore.value), 13.0, BRIGHT)
+        label(&money(ore.value), style::SMALL)
       ));
     }
   }
@@ -389,7 +357,7 @@ fn pop_sold_ores(
     commands.spawn((
       SoldTag { at, timer: Timer::from_seconds(SOLD_LIFE, TimerMode::Once) },
       Node { position_type: PositionType::Absolute, ..default() },
-      heavy(&money(value), 21.0, CASH, &bold)
+      heavy(&money(value), 21.0, style::CASH, &bold)
     ));
   }
 }
@@ -412,7 +380,7 @@ fn animate_sold_tags(
     }
     transform.translation = Val2::new(percent(-50), px(-SOLD_RISE * age));
     transform.scale = Vec2::splat(1.0 + 0.5 * (1.0 - age).powi(7));
-    color.0 = CASH.with_alpha((2.6 - 2.6 * age).min(1.0));
+    color.0 = style::CASH.with_alpha((2.6 - 2.6 * age).min(1.0));
     if tag.timer.is_finished() {
       commands.entity(entity).despawn();
     }
@@ -420,7 +388,7 @@ fn animate_sold_tags(
 }
 
 pub fn plugin(app: &mut App) {
-  app.add_systems(PreStartup, load_bold).add_systems(Startup, spawn_hud).add_systems(
+  app.add_systems(Startup, spawn_hud).add_systems(
     Update,
     (
       update_hud,

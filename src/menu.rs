@@ -1,6 +1,6 @@
 use {crate::{player::UiHover,
              store::Panels,
-             ui::{BRIGHT, DIM, label}},
+             style::{self, label, tinted}},
      bevy::{app::AppExit,
             prelude::*,
             render::view::screenshot::{Screenshot, save_to_disk},
@@ -43,8 +43,8 @@ fn menu_button(action: MenuAction, caption: &str) -> impl Bundle {
       border_radius: BorderRadius::all(px(9)),
       ..default()
     },
-    BackgroundColor(Color::srgb(0.11, 0.13, 0.17)),
-    children![label(caption, 16.0, BRIGHT)]
+    BackgroundColor(style::SLOT),
+    children![label(caption, 16.0)]
   )
 }
 
@@ -60,7 +60,7 @@ fn spawn_menu(mut commands: Commands) {
             display: Display::None,
             ..default()
         },
-        BackgroundColor(Color::srgba(0.01, 0.02, 0.04, 0.72)),
+        BackgroundColor(style::SHADE),
         children![(
             Node {
                 width: px(364),
@@ -71,15 +71,15 @@ fn spawn_menu(mut commands: Commands) {
                 border_radius: BorderRadius::all(px(14)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.03, 0.04, 0.07, 0.97)),
+            BackgroundColor(style::PANEL),
             children![
-                label("Paused", 30.0, BRIGHT),
+                label("Paused", 30.0),
                 (
                     Node {
                         margin: UiRect::bottom(px(8)),
                         ..default()
                     },
-                    label("The belts wait for you.", 13.0, DIM),
+                    tinted("The belts wait for you.", style::SMALL, style::TEXT_DIM),
                 ),
                 menu_button(MenuAction::Resume, "Back to the island"),
                 menu_button(MenuAction::Fullscreen, "Toggle fullscreen"),
@@ -90,10 +90,10 @@ fn spawn_menu(mut commands: Commands) {
                         margin: UiRect::top(px(10)),
                         ..default()
                     },
-                    label(
-                        "WASD move    Space jump    Right-drag look\nE items    F store    Click a machine to move it    X stores it\nR rotates    Q cancels    F2 screenshot",
+                    tinted(
+                        "WASD move    Space jump    Right-drag look\nE items    F store    Click a machine to move it    X deletes\nR rotates    Q cancels    F2 screenshot",
                         11.0,
-                        DIM,
+                        style::TEXT_DIM,
                     ),
                     TextLayout {
                         justify: Justify::Center,

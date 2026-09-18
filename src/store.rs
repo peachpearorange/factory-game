@@ -4,21 +4,9 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
              machine::Money,
              menu::{ScreenshotButton, playing},
              player::UiHover,
-             ui::{Bold, heavy, label}},
+             style::{self, Bold, heavy, label, tinted}},
      bevy::prelude::*};
 
-const BRIGHT: Color = Color::srgb(0.94, 0.95, 0.97);
-const ITEMS_TINT: Color = Color::srgb(0.36, 0.86, 0.99);
-const STORE_TINT: Color = Color::srgb(0.46, 0.93, 0.46);
-const GRANTED: Color = Color::srgb(0.48, 0.96, 0.52);
-const DENIED: Color = Color::srgb(1.0, 0.56, 0.30);
-const SEALED: Color = Color::srgb(0.66, 0.72, 0.86);
-const SHOT_TINT: Color = Color::srgb(0.99, 0.78, 0.34);
-const DELETE_TINT: Color = Color::srgb(0.98, 0.31, 0.29);
-const ARMED: Color = Color::srgb(0.32, 0.07, 0.08);
-const RESTING: Color = Color::srgb(0.07, 0.08, 0.11);
-const INK: Color = Color::srgb(0.06, 0.06, 0.07);
-const MUTED: Color = Color::srgb(0.42, 0.44, 0.48);
 const BUTTON: f32 = 72.0;
 const GLYPH_SCALE: f32 = 2.2;
 const TILE: f32 = 124.0;
@@ -89,14 +77,14 @@ fn side_panel(left: Val, right: Val) -> impl Bundle {
       overflow: Overflow::scroll_y(),
       ..default()
     },
-    BackgroundColor(Color::srgba(0.03, 0.04, 0.06, 0.95))
+    BackgroundColor(style::PANEL)
   )
 }
 
 fn header(glyph: impl Bundle, title: &str) -> impl Bundle {
   (Node { align_items: AlignItems::Center, column_gap: px(9), ..default() }, children![
     glyph,
-    label(title, 23.0, BRIGHT)
+    label(title, style::TITLE)
   ])
 }
 
@@ -145,11 +133,9 @@ fn tile(
           ..default()
         },
         ImageNode::new(preview),
-        children![icon::lock(
-          locked.then_some(Color::srgba(0.08, 0.08, 0.10, 0.85)).unwrap_or(Color::NONE)
-        )],
+        children![icon::lock(locked.then_some(style::VEIL).unwrap_or(Color::NONE))],
       ),
-      (heavy(name, 14.5, INK, bold), TextLayout {
+      (heavy(name, 14.5, style::INK, bold), TextLayout {
         justify: Justify::Center,
         ..default()
       },),
@@ -161,7 +147,7 @@ fn tile(
 fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Res<Bold>) {
   let store = commands
     .spawn((StorePanel, side_panel(Val::Auto, px(18)), children![header(
-      icon::store(BRIGHT),
+      icon::store(style::TEXT),
       "Store"
     )]))
     .id();
@@ -169,7 +155,7 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
 
   let inventory = commands
     .spawn((InventoryPanel, side_panel(px(18), Val::Auto), children![header(
-      icon::inventory(BRIGHT),
+      icon::inventory(style::TEXT),
       "Inventory"
     )]))
     .id();
@@ -192,7 +178,7 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
         spec.tier,
         spec.name,
         spec.unlock.is_some(),
-        (heavy("", 13.0, INK, &bold), PriceLabel(kind)),
+        (heavy("", style::SMALL, style::INK, &bold), PriceLabel(kind)),
         &bold
       ),
       ChildOf(store_grid)
@@ -207,7 +193,7 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
         spec.tier,
         spec.name,
         false,
-        (heavy("", 13.0, INK, &bold), CountLabel(kind)),
+        (heavy("", style::SMALL, style::INK, &bold), CountLabel(kind)),
         &bold
       ),
       ChildOf(inventory_grid)
@@ -235,58 +221,58 @@ fn toggle_button(
       border_radius: BorderRadius::all(px(13)),
       ..default()
     },
-    BackgroundColor(RESTING),
-    children![icon::scaled(glyph, GLYPH_SCALE), label(caption, 14.0, tint)]
+    BackgroundColor(style::BUTTON),
+    children![icon::scaled(glyph, GLYPH_SCALE), tinted(caption, 14.0, tint)]
   )
 }
 
 fn spawn_toolbar(mut commands: Commands) {
   commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: px(18),
-            left: percent(50),
-            margin: UiRect::left(px(-((BUTTON * 4.0 + 36.0) / 2.0))),
-            column_gap: px(12),
-            ..default()
-        },
-        children![
-            (
-                InventoryToggle,
-                toggle_button(
-                    icon::inventory(ITEMS_TINT),
-                    "Inventory",
-                    "ITEMS",
-                    "E",
-                    ITEMS_TINT,
-                ),
-            ),
-            (
-                StoreToggle,
-                toggle_button(icon::store(STORE_TINT), "Store", "STORE", "F", STORE_TINT),
-            ),
-            (
-                DeleteToggle,
-                toggle_button(
-                    icon::cross(DELETE_TINT),
-                    "Delete mode",
-                    "CLEAR",
-                    "X",
-                    DELETE_TINT,
-                ),
-            ),
-            (
-                ScreenshotButton,
-                toggle_button(
-                    icon::camera(SHOT_TINT),
-                    "Screenshot",
-                    "PHOTO",
-                    "F2",
-                    SHOT_TINT,
-                ),
-            ),
-        ],
-    ));
+    Node {
+      position_type: PositionType::Absolute,
+      bottom: px(18),
+      left: percent(50),
+      margin: UiRect::left(px(-((BUTTON * 4.0 + 36.0) / 2.0))),
+      column_gap: px(12),
+      ..default()
+    },
+    children![
+      (
+        InventoryToggle,
+        toggle_button(
+          icon::inventory(style::ITEMS),
+          "Inventory",
+          "ITEMS",
+          "E",
+          style::ITEMS,
+        ),
+      ),
+      (
+        StoreToggle,
+        toggle_button(icon::store(style::STORE), "Store", "STORE", "F", style::STORE),
+      ),
+      (
+        DeleteToggle,
+        toggle_button(
+          icon::cross(style::DELETE),
+          "Delete mode",
+          "CLEAR",
+          "X",
+          style::DELETE,
+        ),
+      ),
+      (
+        ScreenshotButton,
+        toggle_button(
+          icon::camera(style::SHOT),
+          "Screenshot",
+          "PHOTO",
+          "F2",
+          style::SHOT,
+        ),
+      ),
+    ]
+  ));
 
   commands.spawn((ToastStack, Node {
     position_type: PositionType::Absolute,
@@ -353,7 +339,9 @@ fn refresh_panels(
   let shown = |open: bool| open.then_some(Display::Flex).unwrap_or(Display::None);
   store_panel.display = shown(panels.store);
   stock_panel.display = shown(panels.inventory);
-  delete.0 = (*mode == BuildMode::Deleting).then_some(ARMED).unwrap_or(RESTING);
+  delete.0 = (*mode == BuildMode::Deleting)
+    .then_some(style::BUTTON_ARMED)
+    .unwrap_or(style::BUTTON);
 
   for (PriceLabel(kind), mut text) in &mut prices {
     let spec = kind.spec();
@@ -372,7 +360,7 @@ fn refresh_panels(
     let spec = kind.spec();
     background.0 = (spec.unlock.is_none() && money.0 >= spec.price)
       .then(|| spec.tier.swatch())
-      .unwrap_or_else(|| spec.tier.swatch().mix(&MUTED, 0.6));
+      .unwrap_or_else(|| spec.tier.swatch().mix(&style::MUTED, 0.6));
   }
 }
 
@@ -388,20 +376,23 @@ fn buy_machines(
     if *interaction == Interaction::Pressed {
       let (announcement, tint) = spec
         .unlock
-        .map(|task| (format!("Still sealed — {task}"), SEALED))
+        .map(|task| (format!("Still sealed — {task}"), style::SEALED))
         .or_else(|| {
           (money.0 < spec.price).then(|| {
-            (format!("${:.0} short of a {}", spec.price - money.0, spec.name), DENIED)
+            (
+              format!("${:.0} short of a {}", spec.price - money.0, spec.name),
+              style::DENIED
+            )
           })
         })
         .unwrap_or_else(|| {
           money.0 -= spec.price;
           inventory.add(*kind);
-          (format!("{} is yours", spec.name), GRANTED)
+          (format!("{} is yours", spec.name), style::GRANTED)
         });
       commands.spawn((
         Toast(Timer::from_seconds(TOAST_LIFE, TimerMode::Once)),
-        label(&announcement, 17.0, tint),
+        tinted(&announcement, 17.0, tint),
         ChildOf(*stack)
       ));
     }

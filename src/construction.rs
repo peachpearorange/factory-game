@@ -163,12 +163,14 @@ fn place_machine(
   mut mode: ResMut<BuildMode>,
   mut grid: ResMut<BuildGrid>,
   mut inventory: ResMut<Inventory>,
+  mut armed: Local<bool>,
   mut commands: Commands
 ) {
   let (camera, transform) = *eye;
+  *armed = (*armed && !mode.is_changed()) || !mouse.pressed(MouseButton::Left);
   if let BuildMode::Placing { kind, turns } = *mode
     && !hovering.0
-    && !mode.is_changed()
+    && *armed
     && mouse.pressed(MouseButton::Left)
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(cell) = aimed_cell(ray)

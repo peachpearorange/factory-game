@@ -7,6 +7,7 @@ mod ore;
 mod player;
 mod sdf;
 mod store;
+mod style;
 mod texture;
 mod ui;
 mod world;
@@ -31,6 +32,7 @@ fn main() {
       PhysicsPlugins::default().with_collision_hooks::<machine::ConveyorHooks>()
     ))
     .add_plugins((
+      style::plugin,
       world::plugin,
       ore::plugin,
       catalog::plugin,
