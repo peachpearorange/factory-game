@@ -1,12 +1,12 @@
 use crate::catalog::{CELL, MachineAssets, MachineKind, place};
-use crate::player::CursorMode;
+use crate::player::{Player, UiHover};
 use avian3d::prelude::*;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
 const GRID_HALF: i32 = 9;
-const REACH: f32 = 26.0;
+const REACH: f32 = 40.0;
 
 #[derive(Component)]
 pub struct PlacedMachine {
@@ -48,29 +48,17 @@ impl Inventory {
     }
 }
 
-fn cell_transform(cell: IVec2, turns: u8) -> Transform {
-    Transform::from_xyz(cell.x as f32 * CELL, 0.0, cell.y as f32 * CELL)
-        .with_rotation(Quat::from_rotation_y(turns as f32 * -FRAC_PI_2))
+pub fn aim_ray(camera: &Camera, eye: &GlobalTransform, window: &Window) -> Option<Ray3d> {
+    window
+        .cursor_position()
+        .and_then(|position| camera.viewport_to_world(eye, position).ok())
 }
 
-fn aimed_cell(camera: &GlobalTransform) -> Option<IVec2> {
-    let origin = camera.translation();
-    let direction = camera.forward().as_vec3();
-    (direction.y < -0.02)
-        .then(|| origin.y / -direction.y)
-        .filter(|&distance| distance < REACH)
-        .map(|distance| {
-            let hit = origin + direction * distance;
-            IVec2::new((hit.x / CELL).round() as i32, (hit.z / CELL).round() as i32)
-        })
-        .filter(|cell| cell.x.abs() <= GRID_HALF && cell.y.abs() <= GRID_HALF)
-}
-
-pub fn aimed_entity(spatial: &SpatialQuery, camera: &GlobalTransform, ignore: Entity) -> Option<Entity> {
+pub fn aimed_entity(spatial: &SpatialQuery, ray: Ray3d, ignore: Entity) -> Option<Entity> {
     spatial
         .cast_ray(
-            camera.translation(),
-            camera.forward(),
+            ray.origin,
+            ray.direction,
             REACH,
             true,
             &SpatialQueryFilter::from_excluded_entities([ignore]),
@@ -78,7 +66,11 @@ pub fn aimed_entity(spatial: &SpatialQuery, camera: &GlobalTransform, ignore: En
         .map(|hit| hit.entity)
 }
 
-pub fn machine_root(entity: Entity, parents: &Query<&ChildOf>, machines: &Query<&PlacedMachine>) -> Option<Entity> {
+pub fn machine_root(
+    entity: Entity,
+    parents: &Query<&ChildOf>,
+    machines: &Query<&PlacedMachine>,
+) -> Option<Entity> {
     machines
         .contains(entity)
         .then_some(entity)
@@ -86,18 +78,30 @@ pub fn machine_root(entity: Entity, parents: &Query<&ChildOf>, machines: &Query<
         .filter(|&root| machines.contains(root))
 }
 
-fn steer_build(
-    keys: Res<ButtonInput<KeyCode>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mut mode: ResMut<BuildMode>,
-) {
+fn cell_transform(cell: IVec2, turns: u8) -> Transform {
+    Transform::from_xyz(cell.x as f32 * CELL, 0.0, cell.y as f32 * CELL)
+        .with_rotation(Quat::from_rotation_y(turns as f32 * -FRAC_PI_2))
+}
+
+fn aimed_cell(ray: Ray3d) -> Option<IVec2> {
+    (ray.direction.y < -0.02)
+        .then(|| ray.origin.y / -ray.direction.y)
+        .filter(|&distance| distance < REACH)
+        .map(|distance| {
+            let hit = ray.origin + ray.direction * distance;
+            IVec2::new((hit.x / CELL).round() as i32, (hit.z / CELL).round() as i32)
+        })
+        .filter(|cell| cell.x.abs() <= GRID_HALF && cell.y.abs() <= GRID_HALF)
+}
+
+fn steer_build(keys: Res<ButtonInput<KeyCode>>, mut mode: ResMut<BuildMode>) {
     if let BuildMode::Placing { kind, turns } = *mode {
         if keys.just_pressed(KeyCode::KeyR) {
             *mode = BuildMode::Placing {
                 kind,
                 turns: (turns + 1) % 4,
             };
-        } else if keys.just_pressed(KeyCode::Escape) || mouse.just_pressed(MouseButton::Right) {
+        } else if keys.just_pressed(KeyCode::Escape) {
             *mode = BuildMode::Idle;
         }
     }
@@ -106,16 +110,21 @@ fn steer_build(
 fn update_ghost(
     mode: Res<BuildMode>,
     grid: Res<BuildGrid>,
+    hovering: Res<UiHover>,
     assets: Res<MachineAssets>,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    window: Single<&Window>,
     ghosts: Query<Entity, With<Ghost>>,
     mut commands: Commands,
 ) {
     for entity in &ghosts {
         commands.entity(entity).despawn();
     }
+    let (camera, transform) = *eye;
     if let BuildMode::Placing { kind, turns } = *mode
-        && let Some(cell) = aimed_cell(*camera)
+        && !hovering.0
+        && let Some(ray) = aim_ray(camera, transform, *window)
+        && let Some(cell) = aimed_cell(ray)
     {
         let blocked = grid.0.contains_key(&cell);
         commands.spawn((
@@ -133,19 +142,22 @@ fn update_ghost(
 
 fn place_machine(
     mouse: Res<ButtonInput<MouseButton>>,
-    pointer: Res<CursorMode>,
+    hovering: Res<UiHover>,
     assets: Res<MachineAssets>,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    window: Single<&Window>,
     mut mode: ResMut<BuildMode>,
     mut grid: ResMut<BuildGrid>,
     mut inventory: ResMut<Inventory>,
     mut commands: Commands,
 ) {
+    let (camera, transform) = *eye;
     if let BuildMode::Placing { kind, turns } = *mode
-        && *pointer == CursorMode::Look
+        && !hovering.0
         && !mode.is_changed()
         && mouse.just_pressed(MouseButton::Left)
-        && let Some(cell) = aimed_cell(*camera)
+        && let Some(ray) = aim_ray(camera, transform, *window)
+        && let Some(cell) = aimed_cell(ray)
         && !grid.0.contains_key(&cell)
         && inventory.take(kind)
     {
@@ -160,19 +172,22 @@ fn place_machine(
 
 fn remove_machine(
     keys: Res<ButtonInput<KeyCode>>,
-    pointer: Res<CursorMode>,
+    hovering: Res<UiHover>,
     spatial: SpatialQuery,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
-    player: Single<Entity, With<crate::player::Player>>,
+    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    window: Single<&Window>,
+    player: Single<Entity, With<Player>>,
     parents: Query<&ChildOf>,
     machines: Query<&PlacedMachine>,
     mut grid: ResMut<BuildGrid>,
     mut inventory: ResMut<Inventory>,
     mut commands: Commands,
 ) {
-    if *pointer == CursorMode::Look
+    let (camera, transform) = *eye;
+    if !hovering.0
         && keys.just_pressed(KeyCode::KeyX)
-        && let Some(hit) = aimed_entity(&spatial, *camera, *player)
+        && let Some(ray) = aim_ray(camera, transform, *window)
+        && let Some(hit) = aimed_entity(&spatial, ray, *player)
         && let Some(root) = machine_root(hit, &parents, &machines)
         && let Ok(machine) = machines.get(root)
     {

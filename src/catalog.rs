@@ -2,7 +2,10 @@ use crate::machine::{ConveyorBelt, Dropper, Furnace, Upgrader};
 use crate::ore::Effects;
 use crate::sdf;
 use avian3d::prelude::*;
+use bevy::camera::RenderTarget;
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
+use bevy::render::render_resource::TextureFormat;
 use fidget::context::Tree;
 
 pub const CELL: f32 = 2.0;
@@ -215,10 +218,22 @@ impl MachineAssets {
     }
 }
 
+#[derive(Resource)]
+pub struct MachinePreviews([Handle<Image>; MachineKind::COUNT]);
+
+impl MachinePreviews {
+    const RESOLUTION: u32 = 192;
+
+    pub fn image(&self, kind: MachineKind) -> Handle<Image> {
+        self.0[kind.index()].clone()
+    }
+}
+
 fn load_machine_assets(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     let ghost = |color: Color| StandardMaterial {
         base_color: color,
@@ -227,19 +242,67 @@ fn load_machine_assets(
         ..default()
     };
 
-    commands.insert_resource(MachineAssets {
-        meshes: MachineKind::ALL
-            .map(|kind| meshes.add(sdf::bake(MachineAssets::shape(kind), sdf::Bounds::new(2.8, 6)))),
-        materials: MachineKind::ALL.map(|kind| {
-            let (base_color, emissive) = kind.accent();
-            materials.add(StandardMaterial {
-                base_color,
-                emissive,
-                perceptual_roughness: 0.6,
-                metallic: 0.35,
+    let machine_meshes = MachineKind::ALL
+        .map(|kind| meshes.add(sdf::bake(MachineAssets::shape(kind), sdf::Bounds::new(2.8, 6))));
+    let machine_materials = MachineKind::ALL.map(|kind| {
+        let (base_color, emissive) = kind.accent();
+        materials.add(StandardMaterial {
+            base_color,
+            emissive,
+            perceptual_roughness: 0.6,
+            metallic: 0.35,
+            ..default()
+        })
+    });
+
+    let previews = MachineKind::ALL.map(|kind| {
+        let image = images.add(Image::new_target_texture(
+            MachinePreviews::RESOLUTION,
+            MachinePreviews::RESOLUTION,
+            TextureFormat::Rgba8UnormSrgb,
+            None,
+        ));
+        let layer = RenderLayers::layer(kind.index() + 1);
+        let stage = Vec3::new(0.0, -600.0 - 40.0 * kind.index() as f32, 0.0);
+        let focus = stage + Vec3::Y * 1.3;
+
+        commands.spawn((
+            Mesh3d(machine_meshes[kind.index()].clone()),
+            MeshMaterial3d(machine_materials[kind.index()].clone()),
+            Transform::from_translation(stage).with_rotation(Quat::from_rotation_y(-0.6)),
+            layer.clone(),
+        ));
+        commands.spawn((
+            DirectionalLight {
+                illuminance: 6000.0,
                 ..default()
-            })
-        }),
+            },
+            Transform::from_translation(stage + Vec3::new(4.0, 6.0, 5.0)).looking_at(focus, Vec3::Y),
+            layer.clone(),
+        ));
+        commands.spawn((
+            Camera3d::default(),
+            Camera {
+                order: -1 - kind.index() as isize,
+                clear_color: ClearColorConfig::Custom(Color::NONE),
+                ..default()
+            },
+            RenderTarget::Image(image.clone().into()),
+            AmbientLight {
+                color: Color::srgb(0.76, 0.81, 0.95),
+                brightness: 900.0,
+                ..default()
+            },
+            Transform::from_translation(stage + Vec3::new(4.0, 3.7, 4.8)).looking_at(focus, Vec3::Y),
+            layer,
+        ));
+        image
+    });
+
+    commands.insert_resource(MachinePreviews(previews));
+    commands.insert_resource(MachineAssets {
+        meshes: machine_meshes,
+        materials: machine_materials,
         ghost_valid: materials.add(ghost(Color::srgba(0.25, 0.95, 0.45, 0.35))),
         ghost_blocked: materials.add(ghost(Color::srgba(0.95, 0.25, 0.25, 0.30))),
     });

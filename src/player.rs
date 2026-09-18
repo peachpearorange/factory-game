@@ -10,12 +10,8 @@ const GRAVITY: f32 = -26.0;
 const JUMP_SPEED: f32 = 9.5;
 const GROUND_PROBE: f32 = 0.18;
 
-#[derive(Resource, Default, PartialEq, Eq, Clone, Copy)]
-pub enum CursorMode {
-    #[default]
-    Look,
-    Ui,
-}
+#[derive(Resource, Default)]
+pub struct UiHover(pub bool);
 
 #[derive(Component)]
 #[require(
@@ -89,10 +85,10 @@ fn spawn_player(
     ));
 }
 
-fn sync_cursor(mode: Res<CursorMode>, mut cursor: Single<&mut CursorOptions>) {
-    let looking = *mode == CursorMode::Look;
-    cursor.visible = !looking;
-    cursor.grab_mode = looking
+fn sync_cursor(mouse: Res<ButtonInput<MouseButton>>, mut cursor: Single<&mut CursorOptions>) {
+    let turning = mouse.pressed(MouseButton::Right);
+    cursor.visible = !turning;
+    cursor.grab_mode = turning
         .then_some(CursorGrabMode::Locked)
         .unwrap_or(CursorGrabMode::None);
 }
@@ -100,7 +96,7 @@ fn sync_cursor(mode: Res<CursorMode>, mut cursor: Single<&mut CursorOptions>) {
 fn move_player(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
-    mode: Res<CursorMode>,
+    hovering: Res<UiHover>,
     camera: Single<&Transform, (With<Camera3d>, Without<Player>)>,
     player: Single<(Entity, &Player, &Collider, &mut Transform, &mut LinearVelocity)>,
     move_and_slide: MoveAndSlide,
@@ -108,7 +104,7 @@ fn move_player(
     let (entity, player, collider, mut transform, mut velocity) = player.into_inner();
     let flat = camera.forward().as_vec3().with_y(0.0).normalize_or_zero();
     let right = Vec3::new(-flat.z, 0.0, flat.x);
-    let wish = (*mode == CursorMode::Look)
+    let wish = (!hovering.0)
         .then(|| {
             [
                 (KeyCode::KeyW, flat),
@@ -140,7 +136,7 @@ fn move_player(
     let fall = velocity.y + GRAVITY * time.delta_secs();
     velocity.0 = Vec3::new(
         wish.x,
-        if grounded && *mode == CursorMode::Look && keys.just_pressed(KeyCode::Space) {
+        if grounded && !hovering.0 && keys.just_pressed(KeyCode::Space) {
             JUMP_SPEED
         } else if grounded {
             fall.max(GRAVITY * time.delta_secs())
@@ -173,13 +169,14 @@ fn move_player(
 
 fn follow_player(
     rig: Res<CameraRig>,
-    mode: Res<CursorMode>,
+    mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     player: Single<&Transform, With<Player>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>,
 ) {
     let (yaw, pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
-    let delta = (*mode == CursorMode::Look)
+    let delta = mouse
+        .pressed(MouseButton::Right)
         .then_some(motion.delta)
         .unwrap_or(Vec2::ZERO);
     camera.rotation = Quat::from_euler(
@@ -194,7 +191,7 @@ fn follow_player(
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<CameraRig>()
-        .init_resource::<CursorMode>()
+        .init_resource::<UiHover>()
         .add_systems(Startup, spawn_player)
         .add_systems(Update, (sync_cursor, move_player, follow_player).chain());
 }

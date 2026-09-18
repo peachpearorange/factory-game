@@ -1,5 +1,6 @@
 mod catalog;
 mod construction;
+mod icon;
 mod machine;
 mod ore;
 mod player;

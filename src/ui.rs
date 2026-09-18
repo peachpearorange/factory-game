@@ -1,13 +1,18 @@
-use crate::construction::{BuildMode, PlacedMachine, aimed_entity, machine_root};
+use crate::construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity, machine_root};
+use crate::icon;
 use crate::machine::Money;
-use crate::ore::{Ore, OreLimit};
-use crate::player::{CursorMode, Player};
+use crate::ore::{Effects, Ore, OreLimit};
+use crate::player::{Player, UiHover};
+use crate::store::HoverInfo;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
 const METER_WIDTH: f32 = 200.0;
 const DIM: Color = Color::srgb(0.55, 0.58, 0.63);
 const BRIGHT: Color = Color::srgb(0.93, 0.94, 0.96);
+const FIRE: Color = Color::srgb(1.0, 0.45, 0.15);
+const WATER: Color = Color::srgb(0.35, 0.65, 1.0);
+const DECAY: Color = Color::srgb(0.45, 0.95, 0.35);
 
 #[derive(Component)]
 struct OreMeterFill;
@@ -19,9 +24,6 @@ struct OreMeterLabel;
 struct MoneyLabel;
 
 #[derive(Component)]
-struct Crosshair;
-
-#[derive(Component)]
 struct Tooltip;
 
 #[derive(Component)]
@@ -29,6 +31,18 @@ struct TooltipTitle;
 
 #[derive(Component)]
 struct TooltipBody;
+
+#[derive(Component)]
+struct EffectIcon(Effects);
+
+#[derive(Component)]
+struct Hint;
+
+#[derive(Component)]
+struct HintTitle;
+
+#[derive(Component)]
+struct HintDetail;
 
 pub fn label(text: &str, size: f32, color: Color) -> impl Bundle {
     (
@@ -38,6 +52,28 @@ pub fn label(text: &str, size: f32, color: Color) -> impl Bundle {
             ..default()
         },
         TextColor(color),
+    )
+}
+
+fn floating(bottom: f32, width: f32) -> impl Bundle {
+    (
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(bottom),
+            left: percent(50),
+            margin: UiRect::left(px(-width / 2.0)),
+            width: px(width),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            row_gap: px(3),
+            padding: UiRect::all(px(10)),
+            border: UiRect::all(px(1)),
+            border_radius: BorderRadius::all(px(7)),
+            display: Display::None,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.9)),
+        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.18)),
     )
 }
 
@@ -77,46 +113,37 @@ fn spawn_hud(mut commands: Commands) {
                     OreMeterFill,
                 )],
             ),
-            label("B store    Tab inventory    X remove", 12.0, DIM),
+            label("Right-drag to look    R rotate    X remove", 12.0, DIM),
         ],
     ));
 
     commands.spawn((
-        Crosshair,
-        Node {
-            position_type: PositionType::Absolute,
-            top: percent(50),
-            left: percent(50),
-            width: px(5),
-            height: px(5),
-            margin: UiRect::all(px(-2)),
-            border_radius: BorderRadius::all(px(3)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.75)),
+        Tooltip,
+        floating(150.0, 320.0),
+        children![
+            (
+                Node {
+                    align_items: AlignItems::Center,
+                    column_gap: px(6),
+                    ..default()
+                },
+                children![
+                    (icon::flame(FIRE), EffectIcon(Effects::FIERY)),
+                    (icon::droplet(WATER), EffectIcon(Effects::WET)),
+                    (icon::radiation(DECAY), EffectIcon(Effects::RADIOACTIVE)),
+                    (label("", 17.0, BRIGHT), TooltipTitle),
+                ],
+            ),
+            (label("", 13.0, DIM), TooltipBody),
+        ],
     ));
 
     commands.spawn((
-        Tooltip,
-        Node {
-            position_type: PositionType::Absolute,
-            top: percent(56),
-            left: percent(50),
-            margin: UiRect::left(px(-150)),
-            width: px(300),
-            flex_direction: FlexDirection::Column,
-            row_gap: px(3),
-            padding: UiRect::all(px(10)),
-            border: UiRect::all(px(1)),
-            border_radius: BorderRadius::all(px(6)),
-            display: Display::None,
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.02, 0.03, 0.05, 0.86)),
-        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.18)),
+        Hint,
+        floating(72.0, 260.0),
         children![
-            (label("", 17.0, BRIGHT), TooltipTitle),
-            (label("", 13.0, DIM), TooltipBody),
+            (label("", 15.0, BRIGHT), HintTitle),
+            (label("", 12.0, DIM), HintDetail),
         ],
     ));
 }
@@ -137,22 +164,43 @@ fn update_hud(
     ***cash = format!("${:.0}", money.0);
 }
 
+fn update_hint(
+    hovered: Query<(&Interaction, &HoverInfo)>,
+    mut panel: Single<&mut Node, With<Hint>>,
+    mut title: Single<&mut Text, (With<HintTitle>, Without<HintDetail>)>,
+    mut detail: Single<&mut Text, (With<HintDetail>, Without<HintTitle>)>,
+) {
+    let shown = hovered
+        .iter()
+        .find(|(state, _)| **state != Interaction::None)
+        .map(|(_, info)| info);
+    panel.display = shown.map(|_| Display::Flex).unwrap_or(Display::None);
+    if let Some(info) = shown {
+        ***title = info.title.clone();
+        ***detail = info.detail.clone();
+    }
+}
+
 fn update_tooltip(
     mode: Res<BuildMode>,
-    pointer: Res<CursorMode>,
+    hovering: Res<UiHover>,
     spatial: SpatialQuery,
-    camera: Single<&GlobalTransform, With<Camera3d>>,
+    eye: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+    window: Single<&Window>,
     player: Single<Entity, With<Player>>,
     parents: Query<&ChildOf>,
     machines: Query<&PlacedMachine>,
     ores: Query<&Ore>,
     mut panel: Single<&mut Node, With<Tooltip>>,
+    mut icons: Query<(&EffectIcon, &mut Node), Without<Tooltip>>,
     mut title: Single<&mut Text, (With<TooltipTitle>, Without<TooltipBody>)>,
     mut body: Single<&mut Text, (With<TooltipBody>, Without<TooltipTitle>)>,
 ) {
-    let looked_at = (*pointer == CursorMode::Look && *mode == BuildMode::Idle)
-        .then(|| aimed_entity(&spatial, *camera, *player))
-        .flatten();
+    let (camera, transform) = *eye;
+    let looked_at = (!hovering.0 && *mode == BuildMode::Idle)
+        .then(|| aim_ray(camera, transform, *window))
+        .flatten()
+        .and_then(|ray| aimed_entity(&spatial, ray, *player));
 
     let described = looked_at.and_then(|entity| {
         ores.get(entity)
@@ -161,6 +209,7 @@ fn update_tooltip(
                 (
                     format!("{} Ore", ore.effects.label()),
                     format!("Worth ${:.0}", ore.value),
+                    ore.effects,
                 )
             })
             .or_else(|| {
@@ -171,6 +220,7 @@ fn update_tooltip(
                         (
                             spec.name.to_string(),
                             format!("{}\nX takes it back to your inventory.", spec.blurb),
+                            Effects::NONE,
                         )
                     })
             })
@@ -180,19 +230,23 @@ fn update_tooltip(
         .as_ref()
         .map(|_| Display::Flex)
         .unwrap_or(Display::None);
-    if let Some((heading, detail)) = described {
+    let effects = described
+        .as_ref()
+        .map(|(_, _, effects)| *effects)
+        .unwrap_or(Effects::NONE);
+    for (EffectIcon(effect), mut node) in &mut icons {
+        node.display = effects
+            .contains(*effect)
+            .then_some(Display::Flex)
+            .unwrap_or(Display::None);
+    }
+    if let Some((heading, detail, _)) = described {
         ***title = heading;
         ***body = detail;
     }
 }
 
-fn update_crosshair(pointer: Res<CursorMode>, mut crosshair: Single<&mut Node, With<Crosshair>>) {
-    crosshair.display = (*pointer == CursorMode::Look)
-        .then_some(Display::Flex)
-        .unwrap_or(Display::None);
-}
-
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn_hud)
-        .add_systems(Update, (update_hud, update_tooltip, update_crosshair));
+        .add_systems(Update, (update_hud, update_hint, update_tooltip));
 }
