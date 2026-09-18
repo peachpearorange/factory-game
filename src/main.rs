@@ -1,7 +1,10 @@
+mod catalog;
+mod construction;
 mod machine;
 mod ore;
 mod player;
 mod sdf;
+mod store;
 mod ui;
 mod world;
 
@@ -24,8 +27,11 @@ fn main() {
         .add_plugins((
             world::plugin,
             ore::plugin,
+            catalog::plugin,
             machine::plugin,
+            construction::plugin,
             player::plugin,
+            store::plugin,
             ui::plugin,
         ))
         .run();

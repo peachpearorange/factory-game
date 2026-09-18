@@ -10,6 +10,13 @@ const GRAVITY: f32 = -26.0;
 const JUMP_SPEED: f32 = 9.5;
 const GROUND_PROBE: f32 = 0.18;
 
+#[derive(Resource, Default, PartialEq, Eq, Clone, Copy)]
+pub enum CursorMode {
+    #[default]
+    Look,
+    Ui,
+}
+
 #[derive(Component)]
 #[require(
     RigidBody::Kinematic,
@@ -82,23 +89,18 @@ fn spawn_player(
     ));
 }
 
-fn grab_cursor(
-    mouse: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mut cursor: Single<&mut CursorOptions>,
-) {
-    if mouse.just_pressed(MouseButton::Left) {
-        cursor.visible = false;
-        cursor.grab_mode = CursorGrabMode::Locked;
-    } else if keys.just_pressed(KeyCode::Escape) {
-        cursor.visible = true;
-        cursor.grab_mode = CursorGrabMode::None;
-    }
+fn sync_cursor(mode: Res<CursorMode>, mut cursor: Single<&mut CursorOptions>) {
+    let looking = *mode == CursorMode::Look;
+    cursor.visible = !looking;
+    cursor.grab_mode = looking
+        .then_some(CursorGrabMode::Locked)
+        .unwrap_or(CursorGrabMode::None);
 }
 
 fn move_player(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
+    mode: Res<CursorMode>,
     camera: Single<&Transform, (With<Camera3d>, Without<Player>)>,
     player: Single<(Entity, &Player, &Collider, &mut Transform, &mut LinearVelocity)>,
     move_and_slide: MoveAndSlide,
@@ -106,16 +108,20 @@ fn move_player(
     let (entity, player, collider, mut transform, mut velocity) = player.into_inner();
     let flat = camera.forward().as_vec3().with_y(0.0).normalize_or_zero();
     let right = Vec3::new(-flat.z, 0.0, flat.x);
-    let wish = [
-        (KeyCode::KeyW, flat),
-        (KeyCode::KeyS, -flat),
-        (KeyCode::KeyD, right),
-        (KeyCode::KeyA, -right),
-    ]
-    .into_iter()
-    .filter(|&(key, _)| keys.pressed(key))
-    .fold(Vec3::ZERO, |sum, (_, direction)| sum + direction)
-    .normalize_or_zero()
+    let wish = (*mode == CursorMode::Look)
+        .then(|| {
+            [
+                (KeyCode::KeyW, flat),
+                (KeyCode::KeyS, -flat),
+                (KeyCode::KeyD, right),
+                (KeyCode::KeyA, -right),
+            ]
+            .into_iter()
+            .filter(|&(key, _)| keys.pressed(key))
+            .fold(Vec3::ZERO, |sum, (_, direction)| sum + direction)
+            .normalize_or_zero()
+        })
+        .unwrap_or(Vec3::ZERO)
         * player.speed;
 
     let filter = SpatialQueryFilter::from_excluded_entities([entity]);
@@ -134,7 +140,7 @@ fn move_player(
     let fall = velocity.y + GRAVITY * time.delta_secs();
     velocity.0 = Vec3::new(
         wish.x,
-        if grounded && keys.just_pressed(KeyCode::Space) {
+        if grounded && *mode == CursorMode::Look && keys.just_pressed(KeyCode::Space) {
             JUMP_SPEED
         } else if grounded {
             fall.max(GRAVITY * time.delta_secs())
@@ -144,7 +150,7 @@ fn move_player(
         wish.z,
     );
 
-    if flat.length_squared() > 0.0 && wish.length_squared() > 0.0 {
+    if wish.length_squared() > 0.0 {
         transform.rotation = Quat::from_rotation_y(wish.x.atan2(wish.z));
     }
 
@@ -167,14 +173,15 @@ fn move_player(
 
 fn follow_player(
     rig: Res<CameraRig>,
+    mode: Res<CursorMode>,
     motion: Res<AccumulatedMouseMotion>,
-    cursor: Single<&CursorOptions>,
     player: Single<&Transform, With<Player>>,
     mut camera: Single<&mut Transform, (With<Camera3d>, Without<Player>)>,
 ) {
     let (yaw, pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
-    let looking = matches!(cursor.grab_mode, CursorGrabMode::Locked);
-    let delta = looking.then_some(motion.delta).unwrap_or(Vec2::ZERO);
+    let delta = (*mode == CursorMode::Look)
+        .then_some(motion.delta)
+        .unwrap_or(Vec2::ZERO);
     camera.rotation = Quat::from_euler(
         EulerRot::YXZ,
         yaw - delta.x * rig.yaw_speed,
@@ -187,6 +194,7 @@ fn follow_player(
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<CameraRig>()
+        .init_resource::<CursorMode>()
         .add_systems(Startup, spawn_player)
-        .add_systems(Update, (grab_cursor, move_player, follow_player).chain());
+        .add_systems(Update, (sync_cursor, move_player, follow_player).chain());
 }

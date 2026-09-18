@@ -12,6 +12,23 @@ impl Effects {
     pub const RADIOACTIVE: Self = Self(1 << 2);
 
     const COUNT: usize = 1 << 3;
+    const NAMED: [(Self, &'static str); 3] = [
+        (Self::FIERY, "Fiery"),
+        (Self::WET, "Wet"),
+        (Self::RADIOACTIVE, "Radioactive"),
+    ];
+
+    pub fn label(self) -> String {
+        let named: Vec<&str> = Self::NAMED
+            .into_iter()
+            .filter(|&(effect, _)| self.contains(effect))
+            .map(|(_, name)| name)
+            .collect();
+        named
+            .is_empty()
+            .then(|| "Plain".to_string())
+            .unwrap_or_else(|| named.join(" "))
+    }
 
     pub fn with(self, other: Self) -> Self {
         Self(self.0 | other.0)
