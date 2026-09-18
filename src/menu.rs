@@ -40,12 +40,10 @@ fn menu_button(action: MenuAction, caption: &str) -> impl Bundle {
       width: percent(100),
       padding: UiRect::all(px(11)),
       justify_content: JustifyContent::Center,
-      border: UiRect::all(px(1)),
       border_radius: BorderRadius::all(px(9)),
       ..default()
     },
-    BackgroundColor(Color::srgba(0.09, 0.11, 0.15, 0.95)),
-    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.16)),
+    BackgroundColor(Color::srgb(0.11, 0.13, 0.17)),
     children![label(caption, 16.0, BRIGHT)]
   )
 }
@@ -95,7 +93,7 @@ fn spawn_menu(mut commands: Commands) {
                         ..default()
                     },
                     label(
-                        "WASD move    Space jump    Right-drag look\nE items    F store    X removes a machine\nR rotates    Q cancels    F2 screenshot",
+                        "WASD move    Space jump    Right-drag look\nE items    F store    Click a machine to move it    X stores it\nR rotates    Q cancels    F2 screenshot",
                         11.0,
                         DIM,
                     ),

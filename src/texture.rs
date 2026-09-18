@@ -48,11 +48,8 @@ fn tiling(pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
 
 pub fn concrete() -> Image {
   tiling(|u, v| {
-    let grain = 0.52 * noise(u, v, 128) + 0.30 * noise(u, v, 32) + 0.18 * noise(u, v, 8);
-    let aggregate = (noise(u, v, 96) - 0.70).max(0.0) * 1.9;
-    let groove = |t: f32| (1.0 - ((t * 4.0).fract() - 0.5).abs() * 40.0).max(0.0) * 0.11;
-    let seam = groove(u) + groove(v);
-    let shade = (0.60 + 0.30 * (grain - 0.5) - aggregate - seam).clamp(0.05, 1.0);
-    [(shade * 255.0) as u8, (shade * 253.0) as u8, (shade * 246.0) as u8, 255]
+    let grain = 0.55 * noise(u, v, 112) + 0.30 * noise(u, v, 40) + 0.15 * noise(u, v, 11);
+    let shade = (0.96 + 0.075 * (grain - 0.5)).clamp(0.0, 1.0);
+    [(shade * 255.0) as u8, (shade * 254.0) as u8, (shade * 250.0) as u8, 255]
   })
 }

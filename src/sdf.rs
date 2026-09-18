@@ -1,5 +1,5 @@
 use {bevy::{asset::RenderAssetUsages,
-            mesh::{PrimitiveTopology, VertexAttributeValues},
+            mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
             prelude::*},
      fidget::{context::Tree,
               mesh::{Octree, Settings},
@@ -27,17 +27,29 @@ pub fn rounded_box(half: Vec3, radius: f32) -> Tree {
 
 pub fn cuboid(half: Vec3) -> Tree { rounded_box(half, 0.0) }
 
-pub fn cylinder(radius: f32, half_height: f32) -> Tree {
+pub fn rounded_cylinder(radius: f32, half_height: f32, round: f32) -> Tree {
   let (x, y, z) = Tree::axes();
-  let radial = (x.square() + z.square()).sqrt() - f64::from(radius);
-  let axial = y.abs() - f64::from(half_height);
-  let outside = (radial.max(0.0).square() + axial.max(0.0).square()).sqrt();
-  outside + radial.max(axial).min(0.0)
+  let r = f64::from(round);
+  let radial = (x.square() + z.square()).sqrt() - (f64::from(radius) - r);
+  let axial = y.abs() - (f64::from(half_height) - r);
+  let outside =
+    (radial.clone().max(0.0).square() + axial.clone().max(0.0).square()).sqrt();
+  outside + radial.max(axial).min(0.0) - r
+}
+
+pub fn cylinder(radius: f32, half_height: f32) -> Tree {
+  rounded_cylinder(radius, half_height, 0.0)
 }
 
 pub fn along_z(shape: Tree) -> Tree {
   let (x, y, z) = Tree::axes();
   shape.remap_xyz(x, z, y)
+}
+
+pub fn rotate_y(shape: Tree, angle: f32) -> Tree {
+  let (x, y, z) = Tree::axes();
+  let (sin, cos) = (f64::from(angle.sin()), f64::from(angle.cos()));
+  shape.remap_xyz(x.clone() * cos + z.clone() * sin, y, z * cos - x * sin)
 }
 
 pub fn at(shape: Tree, offset: Vec3) -> Tree {
@@ -95,7 +107,9 @@ fn box_uv(position: Vec3, normal: Vec3) -> [f32; 2] {
   }
 }
 
-pub fn bake(shape: Tree, bounds: Bounds) -> Mesh {
+type Paint<'a> = Option<&'a dyn Fn(Vec3, Vec3) -> LinearRgba>;
+
+fn baked(shape: Tree, bounds: Bounds, paint: Paint) -> Mesh {
   let bound: BoundShape<VmFunction, f32> =
     VmShape::from(shape).try_into().expect("sdf may only use the x, y and z axes");
   let settings = Settings {
@@ -146,7 +160,7 @@ pub fn bake(shape: Tree, bounds: Bounds) -> Mesh {
     })
     .collect();
 
-  Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+  let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
     .with_inserted_attribute(
       Mesh::ATTRIBUTE_POSITION,
       corners.iter().map(|&(position, ..)| position.to_array()).collect::<Vec<_>>()
@@ -159,6 +173,27 @@ pub fn bake(shape: Tree, bounds: Bounds) -> Mesh {
       Mesh::ATTRIBUTE_UV_0,
       corners.iter().map(|&(.., uv)| uv).collect::<Vec<_>>()
     )
+    .with_inserted_indices(Indices::U32((0..corners.len() as u32).collect()));
+  if let Some(paint) = paint {
+    mesh.insert_attribute(
+      Mesh::ATTRIBUTE_COLOR,
+      corners
+        .iter()
+        .map(|&(position, normal, _)| paint(position, normal).to_f32_array())
+        .collect::<Vec<_>>()
+    );
+  }
+  mesh
+}
+
+pub fn bake(shape: Tree, bounds: Bounds) -> Mesh { baked(shape, bounds, None) }
+
+pub fn bake_painted(
+  shape: Tree,
+  bounds: Bounds,
+  paint: impl Fn(Vec3, Vec3) -> LinearRgba
+) -> Mesh {
+  baked(shape, bounds, Some(&paint))
 }
 
 pub fn points(mesh: &Mesh) -> Vec<Vec3> {

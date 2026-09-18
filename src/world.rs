@@ -1,17 +1,25 @@
 use {crate::{sdf, texture},
      avian3d::prelude::*,
-     bevy::{light::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
+     bevy::{color::Mix,
+            light::{CascadeShadowConfigBuilder, NotShadowCaster, light_consts::lux},
             math::Affine2,
             prelude::*},
      std::f32::consts::TAU};
 
 pub const GROUND: f32 = 0.0;
 pub const PLATFORM_HALF: Vec3 = Vec3::new(21.0, 0.6, 21.0);
-const ISLAND_RADIUS: f32 = 44.0;
-const ISLAND_DEPTH: f32 = 8.0;
+const ISLAND_TOP: f32 = GROUND - PLATFORM_HALF.y * 2.0 + 0.35;
+const ISLAND_FLOOR: f32 = -13.0;
+const SHORE_RADIUS: f32 = 61.0;
 const SKY_RADIUS: f32 = 420.0;
+const SUN_RADIUS: f32 = 9.0;
 const STAR_COUNT: usize = 520;
 const CONCRETE_TILE: f32 = 8.0;
+
+const GRASS: LinearRgba = LinearRgba::rgb(0.13, 0.36, 0.09);
+const SAND: LinearRgba = LinearRgba::rgb(0.46, 0.39, 0.23);
+const ROCK: LinearRgba = LinearRgba::rgb(0.26, 0.27, 0.25);
+const SEABED: LinearRgba = LinearRgba::rgb(0.14, 0.17, 0.15);
 
 #[derive(Resource, Default)]
 pub struct Daylight(pub f32);
@@ -21,6 +29,9 @@ struct Sun;
 
 #[derive(Component)]
 struct SunDisc;
+
+#[derive(Component)]
+struct SkyDome;
 
 #[derive(Resource)]
 struct StarField(Handle<StandardMaterial>);
@@ -34,6 +45,70 @@ impl Default for DayLength {
 
 fn platform_shape() -> fidget::context::Tree { sdf::rounded_box(PLATFORM_HALF, 0.3) }
 
+fn island_shape() -> fidget::context::Tree {
+  let plateau = |reach: f32, angle: f32, radius: f32| {
+    sdf::at(
+      sdf::rounded_cylinder(radius, -ISLAND_FLOOR / 2.0, 3.2),
+      Vec3::new(reach * angle.cos(), ISLAND_FLOOR / 2.0, reach * angle.sin())
+    )
+  };
+  let terrace = |radius: f32, top: f32| {
+    sdf::at(
+      sdf::rounded_cylinder(radius, (top - ISLAND_FLOOR) / 2.0, 2.6),
+      Vec3::new(0.0, (top + ISLAND_FLOOR) / 2.0, 0.0)
+    )
+  };
+  let crag = |x: f32, z: f32, peak: f32, half: Vec2, spin: f32| {
+    let block = |lift: f32, shrink: f32, twist: f32| {
+      sdf::at(
+        sdf::rotate_y(
+          sdf::rounded_box(
+            Vec3::new(
+              half.x * shrink,
+              (peak * lift - ISLAND_FLOOR) / 2.0,
+              half.y * shrink
+            ),
+            1.2
+          ),
+          spin + twist
+        ),
+        Vec3::new(x, (peak * lift + ISLAND_FLOOR) / 2.0, z)
+      )
+    };
+    sdf::union([block(0.5, 1.0, 0.0), block(1.0, 0.6, 0.75)])
+  };
+
+  let land = sdf::union([
+    plateau(0.0, 0.0, 43.0),
+    plateau(23.0, 0.6, 25.0),
+    plateau(26.0, 2.3, 23.0),
+    plateau(22.0, 3.8, 26.0),
+    plateau(27.0, 5.2, 22.0)
+  ]);
+  let skirt = sdf::smooth_union(
+    sdf::smooth_union(terrace(48.0, -3.0), terrace(SHORE_RADIUS - 6.0, -7.5), 3.4),
+    terrace(SHORE_RADIUS, -11.0),
+    3.4
+  );
+  let crags = sdf::union([
+    crag(34.0, -13.0, 7.0, Vec2::new(9.0, 7.0), 0.4),
+    crag(-34.0, 27.0, 10.0, Vec2::new(7.0, 8.5), 1.1),
+    crag(5.0, -38.0, 5.5, Vec2::new(12.0, 8.0), -0.25),
+    crag(-15.0, 35.0, 8.0, Vec2::new(8.0, 7.0), 0.7),
+    crag(41.0, 17.0, 12.0, Vec2::new(6.5, 6.0), 2.2)
+  ]);
+
+  sdf::smooth_union(sdf::smooth_union(land, skirt, 3.0), crags, 2.2)
+}
+
+fn island_paint(position: Vec3, normal: Vec3) -> LinearRgba {
+  let shore = ((-position.y - 0.5) / 2.0).clamp(0.0, 1.0);
+  let depth = ((-position.y - 4.0) / 3.5).clamp(0.0, 1.0);
+  let cliff = ((0.74 - normal.y) / 0.22).clamp(0.0, 1.0);
+  let crest = ((position.y - 3.5) / 3.5).clamp(0.0, 1.0);
+  GRASS.mix(&SAND, shore).mix(&SEABED, depth).mix(&ROCK, cliff.max(crest))
+}
+
 fn star_at(index: usize) -> (Vec3, f32) {
   let scatter = |salt: u32| {
     let seed = (index as u32)
@@ -42,7 +117,7 @@ fn star_at(index: usize) -> (Vec3, f32) {
     let mixed = seed ^ (seed >> 15);
     (mixed.wrapping_mul(2_246_822_519) >> 8) as f32 / (1 << 24) as f32
   };
-  let height = 0.05 + 0.95 * scatter(7);
+  let height = 2.0 * scatter(7) - 1.0;
   let ring = (1.0 - height * height).sqrt();
   let angle = TAU * scatter(31);
   (
@@ -64,38 +139,28 @@ fn spawn_sky(
     ..default()
   });
 
+  let dome = commands.spawn((Name::new("Sky Dome"), SkyDome, Transform::default())).id();
   for index in 0..STAR_COUNT {
     let (position, size) = star_at(index);
     commands.spawn((
       Mesh3d(star_mesh.clone()),
       MeshMaterial3d(star_material.clone()),
       NotShadowCaster,
-      Transform::from_translation(position).with_scale(Vec3::splat(size))
+      Transform::from_translation(position).with_scale(Vec3::splat(size)),
+      ChildOf(dome)
     ));
   }
-
-  let mut halo = |radius: f32, glow: LinearRgba, alpha: f32| {
-    (
-      Mesh3d(meshes.add(Sphere::new(radius).mesh().ico(3).expect("sun mesh"))),
-      MeshMaterial3d(materials.add(StandardMaterial {
-        base_color: Color::srgba(0.0, 0.0, 0.0, alpha),
-        emissive: glow,
-        alpha_mode: AlphaMode::Add,
-        ..default()
-      })),
-      NotShadowCaster
-    )
-  };
 
   commands.spawn((
     Name::new("Sun Disc"),
     SunDisc,
-    halo(12.0, LinearRgba::rgb(260.0, 210.0, 130.0), 1.0),
-    children![
-      halo(19.0, LinearRgba::rgb(40.0, 26.0, 11.0), 1.0),
-      halo(31.0, LinearRgba::rgb(9.0, 5.5, 2.2), 1.0),
-      halo(52.0, LinearRgba::rgb(2.2, 1.3, 0.5), 1.0),
-    ]
+    Mesh3d(meshes.add(Sphere::new(SUN_RADIUS).mesh().ico(4).expect("sun mesh"))),
+    MeshMaterial3d(materials.add(StandardMaterial {
+      base_color: Color::BLACK,
+      emissive: LinearRgba::rgb(3400.0, 2500.0, 1350.0),
+      ..default()
+    })),
+    NotShadowCaster
   ));
 
   commands.insert_resource(StarField(star_material));
@@ -107,18 +172,22 @@ fn spawn_world(
   mut materials: ResMut<Assets<StandardMaterial>>,
   mut images: ResMut<Assets<Image>>
 ) {
+  let island = sdf::bake_painted(
+    island_shape(),
+    sdf::Bounds::around(Vec3::new(0.0, -2.0, 0.0), 66.0, 7),
+    island_paint
+  );
+
   commands.spawn((
     Name::new("Island"),
     RigidBody::Static,
-    Collider::cylinder(ISLAND_RADIUS, ISLAND_DEPTH),
+    Collider::trimesh_from_mesh(&island).expect("island collider"),
     Friction::new(0.9),
-    Mesh3d(meshes.add(Cylinder::new(ISLAND_RADIUS, ISLAND_DEPTH))),
-    MeshMaterial3d(materials.add(StandardMaterial {
-      base_color: Color::srgb(0.24, 0.42, 0.18),
-      perceptual_roughness: 1.0,
-      ..default()
-    })),
-    Transform::from_xyz(0.0, GROUND - ISLAND_DEPTH / 2.0 - PLATFORM_HALF.y * 2.0, 0.0)
+    Mesh3d(meshes.add(island)),
+    MeshMaterial3d(
+      materials.add(StandardMaterial { perceptual_roughness: 0.92, ..default() })
+    ),
+    Transform::from_xyz(0.0, ISLAND_TOP, 0.0)
   ));
 
   commands.spawn((
@@ -128,10 +197,11 @@ fn spawn_world(
     Friction::new(0.9),
     Mesh3d(meshes.add(sdf::bake(platform_shape(), sdf::Bounds::new(22.0, 6)))),
     MeshMaterial3d(materials.add(StandardMaterial {
-      base_color: Color::srgb(0.62, 0.61, 0.59),
+      base_color: Color::srgb(0.66, 0.67, 0.67),
       base_color_texture: Some(images.add(texture::concrete())),
       uv_transform: Affine2::from_scale(Vec2::splat(1.0 / CONCRETE_TILE)),
-      perceptual_roughness: 0.95,
+      perceptual_roughness: 0.58,
+      reflectance: 0.28,
       ..default()
     })),
     Transform::from_xyz(0.0, GROUND - PLATFORM_HALF.y, 0.0)
@@ -163,6 +233,7 @@ fn cycle_day(
   field: Res<StarField>,
   sun: Single<(&mut Transform, &mut DirectionalLight), With<Sun>>,
   disc: Single<(&mut Transform, &mut Visibility), (With<SunDisc>, Without<Sun>)>,
+  dome: Single<&mut Transform, (With<SkyDome>, Without<Sun>, Without<SunDisc>)>,
   mut materials: ResMut<Assets<StandardMaterial>>,
   mut daylight: ResMut<Daylight>,
   mut ambient: ResMut<GlobalAmbientLight>,
@@ -182,14 +253,15 @@ fn cycle_day(
   disc_transform.translation = toward_sun * SKY_RADIUS;
   *disc_visibility =
     (elevation > -0.12).then_some(Visibility::Inherited).unwrap_or(Visibility::Hidden);
+  dome.into_inner().rotation = Quat::from_rotation_x(-angle);
 
   if let Some(mut stars) = materials.get_mut(&field.0) {
     stars.base_color = stars.base_color.with_alpha(night);
   }
 
-  light.illuminance = lux::AMBIENT_DAYLIGHT * day + 2600.0;
+  light.illuminance = lux::AMBIENT_DAYLIGHT * 0.28 * day + 2600.0;
   light.color = Color::srgb(0.62 + 0.38 * day, 0.70 + 0.26 * day, 0.95 - 0.07 * day);
-  ambient.brightness = 120.0 * day + 55.0;
+  ambient.brightness = 80.0 * day + 55.0;
   clear.0 = Color::srgb(0.05 + 0.41 * day, 0.07 + 0.54 * day, 0.16 + 0.72 * day);
 }
 

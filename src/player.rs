@@ -25,6 +25,8 @@ const ARM_HALF: Vec3 = Vec3::new(0.17, 0.45, 0.19);
 const TORSO_HALF: Vec3 = Vec3::new(0.42, 0.45, 0.24);
 const HEAD_HALF: f32 = 0.28;
 const HOLD_ANGLE: f32 = 1.35;
+const LIFT_EASE: f32 = 7.0;
+const LIMB_BLEND: f32 = 9.0;
 const HAND: f32 = -2.0 * ARM_HALF.y;
 const FADE_ALPHA: f32 = 0.22;
 
@@ -47,7 +49,7 @@ pub struct Player;
 #[derive(Component, Default)]
 struct Gait {
   cycle: f32,
-  airborne: bool
+  lift: f32
 }
 
 #[derive(Component)]
@@ -76,9 +78,9 @@ impl Default for CameraRig {
     Self {
       distance: 11.0,
       height: 1.9,
-      yaw_speed: 0.0038,
-      pitch_speed: 0.0030,
-      zoom_speed: 1.1,
+      yaw_speed: 0.0047,
+      pitch_speed: 0.0037,
+      zoom_speed: 2.8,
       zoom_range: 3.5..34.0,
       pitch_range: -1.15..0.62
     }
@@ -101,8 +103,8 @@ fn hanging_shape(half: Vec3) -> fidget::context::Tree {
 
 fn torch_shape() -> fidget::context::Tree {
   sdf::union([
-    sdf::at(sdf::along_z(sdf::cylinder(0.055, 0.13)), Vec3::new(0.0, 0.0, 0.09)),
-    sdf::at(sdf::along_z(sdf::cylinder(0.088, 0.045)), Vec3::new(0.0, 0.0, -0.05))
+    sdf::at(sdf::along_z(sdf::cylinder(0.098, 0.25)), Vec3::new(0.0, 0.0, 0.17)),
+    sdf::at(sdf::along_z(sdf::cylinder(0.165, 0.085)), Vec3::new(0.0, 0.0, -0.09))
   ])
 }
 
@@ -130,11 +132,11 @@ fn spawn_player(
   ));
   let torch = meshes.add(sdf::bake(
     torch_shape(),
-    sdf::Bounds::around(Vec3::new(0.0, 0.0, 0.05), 0.28, 6)
+    sdf::Bounds::around(Vec3::new(0.0, 0.0, 0.09), 0.48, 6)
   ));
   let lens = meshes.add(sdf::bake(
-    sdf::at(sdf::along_z(sdf::cylinder(0.072, 0.012)), Vec3::new(0.0, 0.0, -0.092)),
-    sdf::Bounds::around(Vec3::new(0.0, 0.0, -0.09), 0.16, 6)
+    sdf::at(sdf::along_z(sdf::cylinder(0.138, 0.022)), Vec3::new(0.0, 0.0, -0.172)),
+    sdf::Bounds::around(Vec3::new(0.0, 0.0, -0.17), 0.26, 6)
   ));
 
   let player = commands
@@ -172,9 +174,9 @@ fn spawn_player(
         SpotLight {
           color: Color::srgb(1.0, 0.95, 0.80),
           intensity: 0.0,
-          range: 55.0,
-          inner_angle: 0.22,
-          outer_angle: 0.55,
+          range: 65.0,
+          inner_angle: 0.26,
+          outer_angle: 0.62,
           shadow_maps_enabled: true,
           ..default()
         },
@@ -185,7 +187,8 @@ fn spawn_player(
           metallic: 0.6,
           ..default()
         })),
-        Transform::from_xyz(0.0, HAND + 0.12, 0.14)
+        NotShadowCaster,
+        Transform::from_xyz(0.0, HAND + 0.10, 0.24)
           .with_rotation(Quat::from_rotation_x(HOLD_ANGLE) * Quat::from_rotation_y(PI)),
         children![(
           Mesh3d(lens.clone()),
@@ -195,6 +198,7 @@ fn spawn_player(
             unlit: true,
             ..default()
           })),
+          NotShadowCaster,
         )],
         ChildOf(arm)
       ));
@@ -204,7 +208,7 @@ fn spawn_player(
   commands.spawn((
     MainCamera,
     Camera3d::default(),
-    Bloom { intensity: 0.22, ..Bloom::NATURAL },
+    Bloom { intensity: 0.34, ..Bloom::NATURAL },
     Projection::Perspective(PerspectiveProjection {
       fov: 68f32.to_radians(),
       far: 900.0,
@@ -279,7 +283,8 @@ fn move_player(
     },
     wish.z + carry.z
   );
-  gait.airborne = !grounded && velocity.y.abs() > 0.5;
+  let flying = (!grounded && velocity.y.abs() > 0.5).then_some(1.0).unwrap_or(0.0);
+  gait.lift = gait.lift.lerp(flying, 1.0 - (-LIFT_EASE * time.delta_secs()).exp());
 
   if wish.length_squared() > 0.0 {
     let facing = Quat::from_rotation_y(wish.x.atan2(wish.z));
@@ -302,6 +307,8 @@ fn move_player(
   velocity.0 = projected_velocity;
 }
 
+fn nightfall(daylight: &Daylight) -> f32 { (1.0 - daylight.0 * 3.0).clamp(0.0, 1.0) }
+
 fn animate_body(
   time: Res<Time>,
   daylight: Res<Daylight>,
@@ -312,17 +319,12 @@ fn animate_body(
   let pace = velocity.0.with_y(0.0).length();
   gait.cycle += pace * time.delta_secs() * 2.1;
   let stride = gait.cycle.sin() * (pace / WALK_SPEED).min(1.0) * 0.85;
-  let night = (1.0 - daylight.0 * 3.0).clamp(0.0, 1.0);
-  let blend = 1.0 - (-14.0 * time.delta_secs()).exp();
+  let hold = (nightfall(&daylight) * 6.0).min(1.0);
+  let blend = 1.0 - (-LIMB_BLEND * time.delta_secs()).exp();
 
   for (limb, mut transform) in &mut limbs {
-    let walking = stride * limb.swing;
-    let posed = gait
-      .airborne
-      .then_some(limb.lifted)
-      .unwrap_or_else(|| limb.holds_light.then_some(-HOLD_ANGLE).unwrap_or(walking));
-    let angle =
-      limb.holds_light.then(|| walking + (posed - walking) * night).unwrap_or(posed);
+    let posed = (stride * limb.swing).lerp(limb.lifted, gait.lift);
+    let angle = limb.holds_light.then(|| posed.lerp(-HOLD_ANGLE, hold)).unwrap_or(posed);
     transform.rotation = transform.rotation.slerp(Quat::from_rotation_x(angle), blend);
   }
 }
@@ -331,9 +333,9 @@ fn sweep_flashlight(
   daylight: Res<Daylight>,
   lamp: Single<(&mut SpotLight, &mut Visibility), With<Flashlight>>
 ) {
-  let night = (1.0 - daylight.0 * 3.0).clamp(0.0, 1.0);
+  let night = nightfall(&daylight);
   let (mut light, mut visibility) = lamp.into_inner();
-  light.intensity = 4_000_000.0 * night;
+  light.intensity = 6_500_000.0 * night;
   *visibility =
     (night > 0.05).then_some(Visibility::Inherited).unwrap_or(Visibility::Hidden);
 }

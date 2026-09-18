@@ -11,7 +11,8 @@ const REACH: f32 = 40.0;
 #[derive(Component)]
 pub struct PlacedMachine {
   pub kind: MachineKind,
-  pub cell: IVec2
+  pub cell: IVec2,
+  pub turns: u8
 }
 
 #[derive(Component)]
@@ -159,7 +160,7 @@ fn place_machine(
     && inventory.take(kind)
   {
     let machine = place(&mut commands, &assets, kind, cell_transform(cell, turns));
-    commands.entity(machine).insert(PlacedMachine { kind, cell });
+    commands.entity(machine).insert(PlacedMachine { kind, cell, turns });
     grid.0.insert(cell, machine);
     if inventory.count(kind) == 0 {
       *mode = BuildMode::Idle;
@@ -167,8 +168,9 @@ fn place_machine(
   }
 }
 
-fn remove_machine(
+fn take_machine(
   keys: Res<ButtonInput<KeyCode>>,
+  mouse: Res<ButtonInput<MouseButton>>,
   hovering: Res<UiHover>,
   spatial: SpatialQuery,
   eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
@@ -176,21 +178,27 @@ fn remove_machine(
   player: Single<Entity, With<Player>>,
   parents: Query<&ChildOf>,
   machines: Query<&PlacedMachine>,
+  mut mode: ResMut<BuildMode>,
   mut grid: ResMut<BuildGrid>,
   mut inventory: ResMut<Inventory>,
   mut commands: Commands
 ) {
   let (camera, transform) = *eye;
+  let returning = keys.just_pressed(KeyCode::KeyX);
+  let grabbing = *mode == BuildMode::Idle && mouse.just_pressed(MouseButton::Left);
   if !hovering.0
-    && keys.just_pressed(KeyCode::KeyX)
+    && (returning || grabbing)
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(hit) = aimed_entity(&spatial, ray, *player)
     && let Some(root) = machine_root(hit, &parents, &machines)
-    && let Ok(machine) = machines.get(root)
+    && let Ok(&PlacedMachine { kind, cell, turns }) = machines.get(root)
   {
-    inventory.add(machine.kind);
-    grid.0.remove(&machine.cell);
+    inventory.add(kind);
+    grid.0.remove(&cell);
     commands.entity(root).despawn();
+    if !returning {
+      *mode = BuildMode::Placing { kind, turns };
+    }
   }
 }
 
@@ -201,6 +209,6 @@ pub fn plugin(app: &mut App) {
     .init_resource::<Inventory>()
     .add_systems(
       Update,
-      (steer_build, update_ghost, place_machine, remove_machine).chain().run_if(playing)
+      (steer_build, update_ghost, take_machine, place_machine).chain().run_if(playing)
     );
 }

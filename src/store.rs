@@ -4,7 +4,7 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
              machine::Money,
              menu::{ScreenshotButton, playing},
              player::UiHover,
-             ui::label},
+             ui::{Bold, heavy, label}},
      bevy::prelude::*};
 
 const DIM: Color = Color::srgb(0.52, 0.55, 0.60);
@@ -16,6 +16,7 @@ const DENIED: Color = Color::srgb(1.0, 0.56, 0.30);
 const SEALED: Color = Color::srgb(0.66, 0.72, 0.86);
 const SHOT_TINT: Color = Color::srgb(0.99, 0.78, 0.34);
 const INK: Color = Color::srgb(0.06, 0.06, 0.07);
+const MUTED: Color = Color::srgb(0.42, 0.44, 0.48);
 const BUTTON: f32 = 72.0;
 const GLYPH_SCALE: f32 = 2.2;
 const TILE: f32 = 124.0;
@@ -112,65 +113,36 @@ fn grid() -> Node {
   }
 }
 
-fn tile(preview: Handle<Image>, locked: bool) -> impl Bundle {
-  (
-    Button,
-    Node {
-      width: px(TILE),
-      height: px(TILE),
-      border: UiRect::all(px(1)),
-      border_radius: BorderRadius::all(px(14)),
-      align_items: AlignItems::Center,
-      justify_content: JustifyContent::Center,
-      ..default()
-    },
-    BackgroundColor(Color::srgb(0.08, 0.09, 0.11)),
-    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.12)),
-    children![(
-      Node {
-        width: percent(100),
-        height: percent(100),
-        align_items: AlignItems::Center,
-        justify_content: JustifyContent::Center,
-        border_radius: BorderRadius::all(px(13)),
-        ..default()
-      },
-      ImageNode::new(preview).with_color(
-        locked.then_some(Color::srgb(0.44, 0.46, 0.54)).unwrap_or(Color::WHITE)
-      ),
-      children![icon::lock(
-        locked.then_some(Color::srgba(0.95, 0.96, 1.0, 0.9)).unwrap_or(Color::NONE)
-      )],
-    )]
-  )
-}
-
-fn buy_tile(
+fn tile(
   preview: Handle<Image>,
   tier: Tier,
   name: &str,
   locked: bool,
-  price: impl Bundle
+  caption: impl Bundle,
+  bold: &Bold
 ) -> impl Bundle {
   (
     Button,
     Node {
       width: px(TILE),
-      height: px(TILE + 14.0),
+      height: px(TILE),
       flex_direction: FlexDirection::Column,
       align_items: AlignItems::Center,
-      padding: UiRect::all(px(6)),
-      border: UiRect::all(px(2)),
+      justify_content: JustifyContent::FlexEnd,
+      padding: UiRect::bottom(px(7)),
       border_radius: BorderRadius::all(px(14)),
+      overflow: Overflow::clip(),
       ..default()
     },
     BackgroundColor(tier.swatch()),
-    BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.10)),
     children![
       (
         Node {
-          width: percent(100),
-          flex_grow: 1.0,
+          position_type: PositionType::Absolute,
+          left: px(0),
+          right: px(0),
+          top: px(-16),
+          height: px(TILE + 8.0),
           align_items: AlignItems::Center,
           justify_content: JustifyContent::Center,
           ..default()
@@ -180,26 +152,16 @@ fn buy_tile(
           locked.then_some(Color::srgba(0.08, 0.08, 0.10, 0.85)).unwrap_or(Color::NONE)
         )],
       ),
-      (label(name, 12.5, INK), TextLayout { justify: Justify::Center, ..default() },),
-      price,
+      (heavy(name, 14.5, INK, bold), TextLayout {
+        justify: Justify::Center,
+        ..default()
+      },),
+      caption,
     ]
   )
 }
 
-fn entry(name: &str, face: impl Bundle, caption: impl Bundle) -> impl Bundle {
-  (
-    Node {
-      width: px(TILE),
-      flex_direction: FlexDirection::Column,
-      align_items: AlignItems::Center,
-      row_gap: px(3),
-      ..default()
-    },
-    children![face, label(name, 13.0, BRIGHT), caption]
-  )
-}
-
-fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>) {
+fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Res<Bold>) {
   let store = commands
     .spawn((StorePanel, side_panel(Val::Auto, px(18)), children![header(
       icon::store(BRIGHT),
@@ -230,26 +192,28 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>) {
           .map(|task| format!("{}\nLocked — {task}", spec.blurb))
           .unwrap_or_else(|| spec.blurb.to_string())
       },
-      buy_tile(
+      tile(
         previews.image(kind),
         spec.tier,
         spec.name,
         spec.unlock.is_some(),
-        (label("", 12.5, INK), PriceLabel(kind))
+        (heavy("", 13.0, INK, &bold), PriceLabel(kind)),
+        &bold
       ),
       ChildOf(store_grid)
     ));
 
     commands.spawn((
       StockEntry(kind),
-      entry(
+      StockTile(kind),
+      HoverInfo { title: spec.name.to_string(), detail: spec.blurb.to_string() },
+      tile(
+        previews.image(kind),
+        spec.tier,
         spec.name,
-        (
-          StockTile(kind),
-          HoverInfo { title: spec.name.to_string(), detail: spec.blurb.to_string() },
-          tile(previews.image(kind), false)
-        ),
-        (label("", 12.0, DIM), CountLabel(kind))
+        false,
+        (heavy("", 13.0, INK, &bold), CountLabel(kind)),
+        &bold
       ),
       ChildOf(inventory_grid)
     ));
@@ -273,12 +237,10 @@ fn toggle_button(
       align_items: AlignItems::Center,
       justify_content: JustifyContent::Center,
       padding: UiRect::all(px(2)),
-      border: UiRect::all(px(2)),
       border_radius: BorderRadius::all(px(13)),
       ..default()
     },
-    BackgroundColor(Color::srgba(0.04, 0.05, 0.08, 0.88)),
-    BorderColor::all(tint.with_alpha(0.7)),
+    BackgroundColor(Color::srgb(0.07, 0.08, 0.11)),
     children![icon::scaled(glyph, GLYPH_SCALE), label(caption, 14.0, tint)]
   )
 }
@@ -365,7 +327,7 @@ fn refresh_panels(
   >,
   mut prices: Query<(&PriceLabel, &mut Text), Without<CountLabel>>,
   mut counts: Query<(&CountLabel, &mut Text), Without<PriceLabel>>,
-  mut tiles: Query<(&BuyTile, &mut BorderColor)>
+  mut tiles: Query<(&BuyTile, &mut BackgroundColor)>
 ) {
   let shown = |open: bool| open.then_some(Display::Flex).unwrap_or(Display::None);
   store_panel.display = shown(panels.store);
@@ -384,13 +346,11 @@ fn refresh_panels(
   for (StockEntry(kind), mut node) in &mut entries {
     node.display = shown(inventory.count(*kind) > 0);
   }
-  for (BuyTile(kind), mut border) in &mut tiles {
+  for (BuyTile(kind), mut background) in &mut tiles {
     let spec = kind.spec();
-    *border = BorderColor::all(
-      (spec.unlock.is_none() && money.0 >= spec.price)
-        .then_some(Color::srgba(0.45, 0.95, 0.55, 0.55))
-        .unwrap_or(Color::srgba(1.0, 1.0, 1.0, 0.10))
-    );
+    background.0 = (spec.unlock.is_none() && money.0 >= spec.price)
+      .then(|| spec.tier.swatch())
+      .unwrap_or_else(|| spec.tier.swatch().mix(&MUTED, 0.6));
   }
 }
 

@@ -10,6 +10,7 @@ use {crate::{construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity,
 
 const METER_WIDTH: f32 = 208.0;
 pub const DIM: Color = Color::srgb(0.55, 0.58, 0.63);
+const READABLE: Color = Color::srgb(0.87, 0.90, 0.94);
 pub const BRIGHT: Color = Color::srgb(0.93, 0.94, 0.96);
 const FIRE: Color = Color::srgb(1.0, 0.45, 0.15);
 const WATER: Color = Color::srgb(0.35, 0.65, 1.0);
@@ -48,10 +49,31 @@ struct HintTitle;
 #[derive(Component)]
 struct HintDetail;
 
+#[derive(Resource)]
+pub struct Bold(pub Handle<Font>);
+
+fn load_bold(mut commands: Commands, assets: Res<AssetServer>) {
+  commands.insert_resource(Bold(assets.load("fonts/NotoSans-Bold.ttf")));
+}
+
+const TEXT_SCALE: f32 = 1.14;
+
 pub fn label(text: &str, size: f32, color: Color) -> impl Bundle {
   (
     Text::new(text),
-    TextFont { font_size: FontSize::Px(size), ..default() },
+    TextFont { font_size: FontSize::Px(size * TEXT_SCALE), ..default() },
+    TextColor(color)
+  )
+}
+
+pub fn heavy(text: &str, size: f32, color: Color, bold: &Bold) -> impl Bundle {
+  (
+    Text::new(text),
+    TextFont {
+      font: FontSource::Handle(bold.0.clone()),
+      font_size: FontSize::Px(size * TEXT_SCALE),
+      ..default()
+    },
     TextColor(color)
   )
 }
@@ -122,7 +144,7 @@ fn spawn_hud(mut commands: Commands) {
           (label("Ore  0 / 0", 13.0, BRIGHT), OreMeterLabel),
         ],
       ),
-      label("Right-drag to look    X removes a machine", 12.0, DIM),
+      label("Right-drag to look    Click a machine to move it    X stores it", 12.0, DIM),
     ]
   ));
 
@@ -161,7 +183,7 @@ fn spawn_hud(mut commands: Commands) {
 
   commands.spawn((Hint, floating(100.0, 272.0), children![
     (label("", 15.0, BRIGHT), HintTitle),
-    (label("", 12.0, DIM), HintDetail),
+    (label("", 13.0, READABLE), HintDetail),
   ]));
 }
 
@@ -244,7 +266,7 @@ fn update_tooltip(
             let spec = machine.kind.spec();
             (
               spec.name.to_string(),
-              format!("{}\nX takes it back to your inventory.", spec.blurb),
+              format!("{}\nClick to pick it up.  X stores it.", spec.blurb),
               Effects::NONE
             )
           })
@@ -266,6 +288,7 @@ fn update_tooltip(
 
 pub fn plugin(app: &mut App) {
   app
+    .add_systems(PreStartup, load_bold)
     .add_systems(Startup, spawn_hud)
     .add_systems(Update, (update_hud, show_placing_hint, update_hint, update_tooltip));
 }
