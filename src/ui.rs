@@ -232,7 +232,7 @@ fn update_tooltip(
       .ok()
       .map(|ore| {
         (
-          format!("{} Ore", ore.effects.label()),
+          format!("{} {}", ore.effects.label(), ore.form.noun()),
           format!("Worth ${:.0}", ore.value),
           ore.effects
         )

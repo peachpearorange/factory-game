@@ -1,5 +1,5 @@
 use {crate::{machine::{ARROW_SPAN, BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
-             ore::Effects,
+             ore::{Effects, OreForm},
              sdf, texture},
      avian3d::prelude::*,
      bevy::{camera::{RenderTarget, visibility::RenderLayers},
@@ -24,6 +24,7 @@ const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const DROPPER_BACK: f32 = -0.42;
 const CHUTE_FLOOR: f32 = 1.16;
 pub const CHUTE_REACH: f32 = 1.52;
+const COOP_EAVES: f32 = CHUTE_FLOOR + 0.86;
 const WASH_BAR: f32 = 1.62;
 const BRUSH_TOP: f32 = 1.30;
 const BRUSH_HALF: f32 = 0.50;
@@ -45,6 +46,7 @@ const LAMP_GLOW: Color = Color::srgb(1.0, 0.95, 0.86);
 pub enum MachineKind {
   Conveyor,
   Dropper,
+  Coop,
   Furnace,
   Forge,
   FlameJet,
@@ -112,9 +114,10 @@ impl Tier {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 12] = [
+  pub const ALL: [Self; 13] = [
     Self::Conveyor,
     Self::Dropper,
+    Self::Coop,
     Self::Furnace,
     Self::Forge,
     Self::FlameJet,
@@ -156,6 +159,13 @@ impl MachineKind {
         blurb: "Coughs up a lump of rock every so often. Aim it at a belt.",
         price: 150.0,
         tier: Tier::Plain,
+        unlock: None
+      },
+      Self::Coop => MachineSpec {
+        name: "Chicken Coop",
+        blurb: "A hen broods in the nest box and rolls a fresh egg down the ramp.",
+        price: 340.0,
+        tier: Tier::Sturdy,
         unlock: None
       },
       Self::Forge => MachineSpec {
@@ -246,7 +256,7 @@ impl MachineKind {
 
   const fn surface(self) -> Surface {
     match self {
-      Self::Orewash => Surface::Plastic,
+      Self::Orewash | Self::Coop => Surface::Plastic,
       Self::Torch | Self::Bonfire => Surface::Wood,
       Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
       _ => Surface::Painted
@@ -256,6 +266,7 @@ impl MachineKind {
   const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba> {
     match self {
       Self::Dropper => Some(dropper_paint),
+      Self::Coop => Some(coop_paint),
       Self::Orewash => Some(orewash_paint),
       Self::Floodlight => Some(floodlight_paint),
       _ => None
@@ -265,7 +276,7 @@ impl MachineKind {
   fn accent(self) -> (Color, LinearRgba) {
     match self {
       Self::Conveyor => (Color::srgb(0.30, 0.31, 0.34), LinearRgba::BLACK),
-      Self::Dropper => (Color::WHITE, LinearRgba::BLACK),
+      Self::Dropper | Self::Coop => (Color::WHITE, LinearRgba::BLACK),
       Self::Forge => (Color::srgb(0.44, 0.24, 0.18), LinearRgba::rgb(0.85, 0.22, 0.03)),
       Self::FlameJet => (Color::srgb(0.46, 0.47, 0.50), LinearRgba::BLACK),
       Self::Furnace => (Color::srgb(0.30, 0.17, 0.13), LinearRgba::BLACK),
@@ -365,6 +376,117 @@ fn dropper_paint(at: Vec3, _: Vec3) -> LinearRgba {
     SHELL
   } else {
     STEEL
+  }
+}
+
+fn coop_body() -> Tree {
+  let leg = |side: f32, along: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.07, CHUTE_FLOOR / 2.0, 0.07), 0.04),
+      Vec3::new(DROPPER_BACK + along * 0.46, CHUTE_FLOOR / 2.0, side * 0.50)
+    )
+  };
+  let roof = |slope: f32| {
+    sdf::at(
+      sdf::rotate_z(sdf::rounded_box(Vec3::new(0.55, 0.05, 0.78), 0.04), -slope * 0.6),
+      Vec3::new(DROPPER_BACK + slope * 0.46, COOP_EAVES + 0.11, 0.0)
+    )
+  };
+  let rail = |side: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(CHUTE_REACH / 2.0 - 0.10, 0.06, 0.04), 0.03),
+      Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, side * 0.30)
+    )
+  };
+  let shank = |side: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.035, 0.08, 0.035), 0.025),
+      Vec3::new(0.68, CHUTE_FLOOR + 0.13, side * 0.09)
+    )
+  };
+  let hen = sdf::union([
+    sdf::smooth_union(
+      sdf::at(sdf::sphere(0.23), Vec3::new(0.66, CHUTE_FLOOR + 0.32, 0.0)),
+      sdf::at(sdf::sphere(0.14), Vec3::new(0.82, CHUTE_FLOOR + 0.56, 0.0)),
+      0.11
+    ),
+    sdf::at(
+      sdf::rotate_z(sdf::rounded_box(Vec3::new(0.18, 0.05, 0.11), 0.04), 0.7),
+      Vec3::new(0.42, CHUTE_FLOOR + 0.50, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.08, 0.04, 0.045), 0.03),
+      Vec3::new(0.98, CHUTE_FLOOR + 0.54, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.06, 0.07, 0.03), 0.025),
+      Vec3::new(0.82, CHUTE_FLOOR + 0.74, 0.0)
+    ),
+    shank(1.0),
+    shank(-1.0)
+  ]);
+  sdf::union([
+    sdf::difference(
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.56, 0.42, 0.60), 0.07),
+        Vec3::new(DROPPER_BACK, CHUTE_FLOOR + 0.44, 0.0)
+      ),
+      sdf::at(
+        sdf::along_x(sdf::cylinder(0.19, 0.40)),
+        Vec3::new(DROPPER_BACK + 0.40, CHUTE_FLOOR + 0.32, 0.0)
+      )
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.62, 0.06, 0.66), 0.04),
+      Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32), 0.04),
+      Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.06, 0.12, 0.34), 0.05),
+      Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.10, 0.0)
+    ),
+    roof(1.0),
+    roof(-1.0),
+    rail(1.0),
+    rail(-1.0),
+    leg(1.0, 1.0),
+    leg(1.0, -1.0),
+    leg(-1.0, 1.0),
+    leg(-1.0, -1.0),
+    hen
+  ])
+}
+
+fn coop_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const TIMBER: LinearRgba = LinearRgba::rgb(0.46, 0.31, 0.18);
+  const BARN: LinearRgba = LinearRgba::rgb(0.86, 0.21, 0.15);
+  const SHINGLE: LinearRgba = LinearRgba::rgb(0.93, 0.93, 0.91);
+  const STRAW: LinearRgba = LinearRgba::rgb(0.88, 0.72, 0.34);
+  const PLUMAGE: LinearRgba = LinearRgba::rgb(0.97, 0.96, 0.93);
+  const COMB: LinearRgba = LinearRgba::rgb(0.88, 0.14, 0.10);
+  const BEAK: LinearRgba = LinearRgba::rgb(0.97, 0.68, 0.12);
+
+  if (0.40..1.10).contains(&at.x) && at.z.abs() < 0.26 && at.y > CHUTE_FLOOR + 0.06 {
+    if at.x > 0.90 || at.y < CHUTE_FLOOR + 0.22 {
+      BEAK
+    } else if at.x > 0.60 && at.y > CHUTE_FLOOR + 0.70 {
+      COMB
+    } else {
+      PLUMAGE
+    }
+  } else if at.y < CHUTE_FLOOR - 0.12 {
+    TIMBER
+  } else if at.y > COOP_EAVES
+    || (at.y > CHUTE_FLOOR + 0.56 && !(DROPPER_BACK - 0.58..0.16).contains(&at.x))
+  {
+    SHINGLE
+  } else if at.x > 0.16 {
+    STRAW
+  } else {
+    BARN
   }
 }
 
@@ -781,6 +903,7 @@ impl MachineAssets {
     match kind {
       MachineKind::Conveyor => belt_deck(),
       MachineKind::Dropper => dropper_body(),
+      MachineKind::Coop => coop_body(),
       MachineKind::Furnace => oven_shell(),
       MachineKind::FlameJet => jet_nozzle(),
       MachineKind::Orewash => orewash_tunnel(),
@@ -1003,7 +1126,23 @@ pub fn place(
       ));
       commands.entity(root).insert(Dropper {
         timer: Timer::from_seconds(0.65, TimerMode::Repeating),
-        value: 12.0
+        value: 12.0,
+        form: OreForm::Rock
+      });
+    }
+    MachineKind::Coop => {
+      parts.push((
+        Collider::cuboid(1.3, CHUTE_FLOOR + 1.0, 1.3),
+        Transform::from_xyz(DROPPER_BACK, (CHUTE_FLOOR + 1.0) / 2.0, 0.0)
+      ));
+      parts.push((
+        Collider::cuboid(CHUTE_REACH, 0.14, 0.68),
+        Transform::from_xyz(CHUTE_REACH / 2.0, CHUTE_FLOOR, 0.0)
+      ));
+      commands.entity(root).insert(Dropper {
+        timer: Timer::from_seconds(1.1, TimerMode::Repeating),
+        value: 34.0,
+        form: OreForm::Egg
       });
     }
     MachineKind::Furnace => {

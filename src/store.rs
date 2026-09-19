@@ -5,11 +5,18 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
              menu::{ScreenshotButton, playing},
              player::UiHover,
              style::{self, Bold, heavy, label, tinted}},
-     bevy::prelude::*};
+     bevy::{input::mouse::{MouseScrollUnit, MouseWheel},
+            prelude::*,
+            ui::RelativeCursorPosition}};
 
 const BUTTON: f32 = 72.0;
 const GLYPH_SCALE: f32 = 2.2;
 const TILE: f32 = 124.0;
+const COLUMNS: f32 = 3.0;
+const GAP: f32 = 12.0;
+const PADDING: f32 = 16.0;
+const PANEL_WIDTH: f32 = COLUMNS * TILE + (COLUMNS - 1.0) * GAP + 2.0 * PADDING;
+const SCROLL_STEP: f32 = 42.0;
 const TOAST_LIFE: f32 = 1.6;
 
 #[derive(Resource, Default)]
@@ -62,16 +69,18 @@ struct Toast(Timer);
 
 fn side_panel(left: Val, right: Val) -> impl Bundle {
   (
+    ScrollPosition::default(),
+    RelativeCursorPosition::default(),
     Node {
       position_type: PositionType::Absolute,
       left,
       right,
       top: px(124),
       bottom: px(112),
-      width: px(304),
+      width: px(PANEL_WIDTH),
       flex_direction: FlexDirection::Column,
-      row_gap: px(12),
-      padding: UiRect::all(px(16)),
+      row_gap: px(GAP),
+      padding: UiRect::all(px(PADDING)),
       border_radius: BorderRadius::all(px(12)),
       display: Display::None,
       overflow: Overflow::scroll_y(),
@@ -92,9 +101,30 @@ fn grid() -> Node {
   Node {
     flex_direction: FlexDirection::Row,
     flex_wrap: FlexWrap::Wrap,
-    column_gap: px(12),
-    row_gap: px(12),
+    column_gap: px(GAP),
+    row_gap: px(GAP),
+    flex_shrink: 0.0,
     ..default()
+  }
+}
+
+fn scroll_panels(
+  mut wheel: MessageReader<MouseWheel>,
+  mut panels: Query<(&ComputedNode, &RelativeCursorPosition, &mut ScrollPosition)>
+) {
+  let rolled: f32 = wheel
+    .read()
+    .map(|event| match event.unit {
+      MouseScrollUnit::Line => event.y * SCROLL_STEP,
+      MouseScrollUnit::Pixel => event.y
+    })
+    .sum();
+  for (computed, cursor, mut scroll) in &mut panels {
+    if rolled != 0.0 && cursor.cursor_over() {
+      let reach = (computed.content_size().y - computed.size().y).max(0.0)
+        * computed.inverse_scale_factor;
+      scroll.y = (scroll.y - rolled).clamp(0.0, reach);
+    }
   }
 }
 
@@ -437,6 +467,7 @@ pub fn plugin(app: &mut App) {
       (
         toggle_panels,
         toggle_delete_mode,
+        scroll_panels,
         buy_machines,
         select_machines,
         track_ui_hover,

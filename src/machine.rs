@@ -1,5 +1,5 @@
 use {crate::{catalog::CHUTE_REACH,
-             ore::{Effects, Ore, OreAssets, OreLimit}},
+             ore::{Effects, Ore, OreAssets, OreForm, OreLimit}},
      avian3d::prelude::*,
      bevy::{ecs::{entity::EntityHashSet,
                   system::{SystemParam, lifetimeless::Read}},
@@ -57,7 +57,8 @@ impl CollisionHooks for ConveyorHooks<'_, '_> {
 #[derive(Component)]
 pub struct Dropper {
   pub timer: Timer,
-  pub value: f32
+  pub value: f32,
+  pub form: OreForm
 }
 
 #[derive(Component)]
@@ -104,7 +105,7 @@ fn drop_ores(
     dropper.timer.tick(time.delta());
     if dropper.timer.just_finished() && live < limit.0 {
       let spawn = transform.transform_point(Vec3::new(CHUTE_REACH, DROP_HEIGHT, 0.0));
-      commands.spawn(assets.spawn(spawn, dropper.value));
+      commands.spawn(assets.spawn(dropper.form, spawn, dropper.value));
       live += 1;
     }
   }
@@ -123,7 +124,7 @@ fn upgrade_ores(
     {
       ore.value *= upgrader.multiplier;
       ore.effects = ore.effects.with(upgrader.effects);
-      material.0 = assets.material(ore.effects);
+      material.0 = assets.material(ore.form, ore.effects);
     }
   }
 }
