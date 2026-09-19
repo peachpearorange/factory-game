@@ -987,7 +987,7 @@ fn freeze_previews(
 pub struct MachinePreviews([Handle<Image>; MachineKind::COUNT]);
 
 impl MachinePreviews {
-  const RESOLUTION: u32 = 192;
+  const RESOLUTION: u32 = 256;
 
   pub fn image(&self, kind: MachineKind) -> Handle<Image> { self.0[kind.index()].clone() }
 }
@@ -1060,7 +1060,7 @@ fn load_machine_assets(
         brightness: 900.0,
         ..default()
       },
-      Transform::from_translation(stage + Vec3::new(4.0, 3.7, 4.8))
+      Transform::from_translation(stage + Vec3::new(3.3, 3.0, 3.9))
         .looking_at(focus, Vec3::Y),
       layer
     ));

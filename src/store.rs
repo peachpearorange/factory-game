@@ -11,10 +11,10 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
 
 const BUTTON: f32 = 72.0;
 const GLYPH_SCALE: f32 = 2.2;
-const TILE: f32 = 124.0;
+const TILE: f32 = 132.0;
 const COLUMNS: f32 = 3.0;
-const GAP: f32 = 12.0;
-const PADDING: f32 = 16.0;
+const GAP: f32 = 6.0;
+const PADDING: f32 = 8.0;
 const PANEL_WIDTH: f32 = COLUMNS * TILE + (COLUMNS - 1.0) * GAP + 2.0 * PADDING;
 const SCROLL_STEP: f32 = 42.0;
 const TOAST_LIFE: f32 = 1.6;
@@ -156,8 +156,8 @@ fn tile(
           position_type: PositionType::Absolute,
           left: px(0),
           right: px(0),
-          top: px(-16),
-          height: px(TILE + 8.0),
+          top: px(-26),
+          height: px(TILE + 16.0),
           align_items: AlignItems::Center,
           justify_content: JustifyContent::Center,
           ..default()
