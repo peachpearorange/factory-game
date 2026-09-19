@@ -1224,9 +1224,13 @@ pub fn place(
       ));
       commands.spawn((
         Furnace,
-        Collider::cuboid(1.2, 0.76, 0.76),
+        Collider::cuboid(CELL * 0.95, FURNACE_MOUTH + 0.44, 1.4),
         Sensor,
         CollisionEventsEnabled,
+        Transform::from_xyz(-0.05, (FURNACE_MOUTH + 0.44) / 2.0, 0.0),
+        ChildOf(root)
+      ));
+      commands.spawn((
         Mesh3d(assets.ember_mesh.clone()),
         MeshMaterial3d(assets.ember_glow.clone()),
         NotShadowCaster,
