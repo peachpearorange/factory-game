@@ -308,8 +308,8 @@ fn pinned(at: Vec2) -> impl Bundle {
       position_type: PositionType::Absolute,
       left: px(at.x),
       top: px(at.y),
-      padding: UiRect::axes(px(6), px(2)),
-      border_radius: BorderRadius::all(px(5)),
+      padding: UiRect::axes(px(3), px(0)),
+      border_radius: BorderRadius::all(px(3)),
       ..default()
     },
     UiTransform { translation: Val2::new(percent(-50), percent(-100)), ..default() },
@@ -354,7 +354,7 @@ fn track_value_tags(
       commands.spawn((
         ValueTag(entity),
         pinned(at),
-        label(&money(ore.value), style::SMALL)
+        style::snug(&money(ore.value), style::SMALL)
       ));
     }
   }

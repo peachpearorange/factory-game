@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, text::LineHeight};
 
 pub const TEXT: Color = Color::srgb(0.93, 0.94, 0.96);
 pub const TEXT_DIM: Color = Color::srgb(0.55, 0.58, 0.63);
@@ -53,6 +53,15 @@ pub fn tinted(text: &str, size: f32, color: Color) -> impl Bundle {
 }
 
 pub fn label(text: &str, size: f32) -> impl Bundle { tinted(text, size, TEXT) }
+
+pub fn snug(text: &str, size: f32) -> impl Bundle {
+  (
+    Text::new(text),
+    TextFont { font_size: FontSize::Px(size * SCALE), ..default() },
+    LineHeight::RelativeToFont(1.0),
+    TextColor(TEXT)
+  )
+}
 
 pub fn heavy(text: &str, size: f32, color: Color, bold: &Bold) -> impl Bundle {
   (
