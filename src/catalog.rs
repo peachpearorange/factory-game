@@ -22,6 +22,10 @@ const FURNACE_FOOT: f32 = 0.34;
 const FURNACE_MOUTH: f32 = FURNACE_FOOT + 0.52;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const WASH_BAR: f32 = 1.62;
+const BRUSH_TOP: f32 = 1.30;
+const BRUSH_HALF: f32 = 0.50;
+const FLAPS_PER_CURTAIN: usize = 5;
+const FLAP_REACH: f32 = 0.87;
 const BONFIRE_TOP: f32 = 0.92;
 const TORCH_HEAD: f32 = 1.25;
 const LAMP_HEIGHT: f32 = 2.0;
@@ -59,6 +63,7 @@ struct Finish {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Surface {
   Painted,
+  Plastic,
   Wood,
   Metal
 }
@@ -67,6 +72,7 @@ impl Surface {
   const fn finish(self) -> Finish {
     match self {
       Self::Painted => Finish { roughness: 0.6, metallic: 0.35, reflectance: 0.5 },
+      Self::Plastic => Finish { roughness: 0.42, metallic: 0.0, reflectance: 0.38 },
       Self::Wood => Finish { roughness: 0.88, metallic: 0.0, reflectance: 0.14 },
       Self::Metal => Finish { roughness: 0.24, metallic: 0.95, reflectance: 0.72 }
     }
@@ -237,6 +243,7 @@ impl MachineKind {
 
   const fn surface(self) -> Surface {
     match self {
+      Self::Orewash => Surface::Plastic,
       Self::Torch | Self::Bonfire => Surface::Wood,
       Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
       _ => Surface::Painted
@@ -253,7 +260,7 @@ impl MachineKind {
       Self::MistCoil => {
         (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
       }
-      Self::Orewash => (Color::srgb(0.20, 0.52, 0.66), LinearRgba::rgb(0.04, 0.26, 0.42)),
+      Self::Orewash => (Color::WHITE, LinearRgba::BLACK),
       Self::DecayChamber => {
         (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
       }
@@ -410,10 +417,19 @@ fn orewash_tunnel() -> Tree {
     )
   });
   let brush = |side: f32| {
-    sdf::at(
-      sdf::rounded_cylinder(0.22, 0.50, 0.15),
-      Vec3::new(0.0, BELT_TOP + 0.54, side * 0.62)
-    )
+    let bristles = (0..9).map(move |fin| {
+      sdf::rotate_y(
+        sdf::at(
+          sdf::rounded_box(Vec3::new(0.21, BRUSH_HALF, 0.05), 0.04),
+          Vec3::new(0.0, BRUSH_TOP - BRUSH_HALF, side * 0.62)
+        ),
+        fin as f32 * TAU / 9.0
+      )
+    });
+    sdf::union(bristles.chain([sdf::at(
+      sdf::rounded_cylinder(0.10, BRUSH_HALF, 0.06),
+      Vec3::new(0.0, BRUSH_TOP - BRUSH_HALF, side * 0.62)
+    )]))
   };
   sdf::union(
     [
@@ -428,11 +444,42 @@ fn orewash_tunnel() -> Tree {
         sdf::rounded_box(Vec3::new(0.99, 0.08, 0.38), 0.06),
         Vec3::new(0.0, WASH_BAR + 0.18, 0.0)
       ),
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.64, 0.24, 0.05), 0.05),
+        Vec3::new(0.0, WASH_BAR + 0.48, 0.0)
+      ),
       sdf::at(sdf::along_x(sdf::cylinder(0.08, 0.92)), Vec3::new(0.0, WASH_BAR, 0.0))
     ]
     .into_iter()
     .chain(posts)
   )
+}
+
+fn orewash_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const DECK: LinearRgba = LinearRgba::rgb(0.05, 0.05, 0.06);
+  const SHELL: LinearRgba = LinearRgba::rgb(0.86, 0.90, 0.94);
+  const TRIM: LinearRgba = LinearRgba::rgb(0.76, 0.04, 0.06);
+  const SPRAY: LinearRgba = LinearRgba::rgb(0.95, 0.60, 0.03);
+  const BRISTLE_WARM: LinearRgba = LinearRgba::rgb(0.70, 0.04, 0.40);
+  const BRISTLE_COOL: LinearRgba = LinearRgba::rgb(0.02, 0.42, 0.62);
+
+  if at.y < 0.34 {
+    DECK
+  } else if at.y > WASH_BAR + 0.30 {
+    SPRAY
+  } else if at.y > WASH_BAR + 0.10 {
+    TRIM
+  } else if at.y > WASH_BAR - 0.40 && at.z.abs() < 0.86 {
+    SPRAY
+  } else if at.y > BRUSH_TOP {
+    SHELL
+  } else if at.z.abs() < 0.86 {
+    (at.z > 0.0).then_some(BRISTLE_WARM).unwrap_or(BRISTLE_COOL)
+  } else if at.x.abs() < 0.74 {
+    TRIM
+  } else {
+    SHELL
+  }
 }
 
 fn torch_post() -> Tree {
@@ -600,6 +647,10 @@ pub struct MachineAssets {
   bonfire_flame: Handle<EffectAsset>,
   jet_flame: Handle<EffectAsset>,
   wash_spray: Handle<EffectAsset>,
+  flap_mesh: Handle<Mesh>,
+  flap_material: Handle<StandardMaterial>,
+  sheet_mesh: Handle<Mesh>,
+  sheet_material: Handle<StandardMaterial>,
   ember_mesh: Handle<Mesh>,
   ember_glow: Handle<StandardMaterial>,
   lamp_glow: Handle<StandardMaterial>,
@@ -610,6 +661,13 @@ pub struct MachineAssets {
 impl MachineAssets {
   pub fn mesh(&self, kind: MachineKind) -> Handle<Mesh> {
     self.meshes[kind.index()].clone()
+  }
+
+  fn baked(kind: MachineKind) -> Mesh {
+    let bounds = || sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7);
+    (kind == MachineKind::Orewash)
+      .then(|| sdf::bake_painted(Self::shape(kind), bounds(), orewash_paint))
+      .unwrap_or_else(|| sdf::bake(Self::shape(kind), bounds()))
   }
 
   fn shape(kind: MachineKind) -> Tree {
@@ -651,12 +709,8 @@ fn load_machine_assets(
     ..default()
   };
 
-  let machine_meshes = MachineKind::ALL.map(|kind| {
-    meshes.add(sdf::bake(
-      MachineAssets::shape(kind),
-      sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7)
-    ))
-  });
+  let machine_meshes =
+    MachineKind::ALL.map(|kind| meshes.add(MachineAssets::baked(kind)));
   let grain = images.add(texture::wood());
   let machine_materials = MachineKind::ALL.map(|kind| {
     let (base_color, emissive) = kind.accent();
@@ -744,6 +798,25 @@ fn load_machine_assets(
     bonfire_flame: effects.add(Plume::BONFIRE.asset()),
     jet_flame: effects.add(Plume::JET.asset()),
     wash_spray: effects.add(Plume::WASH.asset()),
+    flap_mesh: meshes.add(Cuboid::new(0.05, 0.92, 0.19)),
+    flap_material: materials.add(StandardMaterial {
+      base_color: Color::srgba(0.32, 0.82, 0.96, 0.34),
+      perceptual_roughness: 0.3,
+      alpha_mode: AlphaMode::Blend,
+      double_sided: true,
+      cull_mode: None,
+      ..default()
+    }),
+    sheet_mesh: meshes.add(Cuboid::new(0.34, 1.06, 0.58)),
+    sheet_material: materials.add(StandardMaterial {
+      base_color: Color::srgba(0.52, 0.86, 1.0, 0.16),
+      emissive: LinearRgba::rgb(0.03, 0.14, 0.22),
+      perceptual_roughness: 0.15,
+      alpha_mode: AlphaMode::Blend,
+      double_sided: true,
+      cull_mode: None,
+      ..default()
+    }),
     ember_mesh: meshes.add(Sphere::new(1.0).mesh().ico(2).expect("ember mesh")),
     ember_glow: materials.add(StandardMaterial {
       base_color: EMBER_GLOW,
@@ -950,6 +1023,25 @@ pub fn place(
             Transform::from_xyz(0.0, WASH_BAR - 0.34, 0.0),
             ChildOf(root)
           ));
+          commands.spawn((
+            Mesh3d(assets.sheet_mesh.clone()),
+            MeshMaterial3d(assets.sheet_material.clone()),
+            NotShadowCaster,
+            Transform::from_xyz(0.0, 0.88, 0.0),
+            ChildOf(root)
+          ));
+          for slot in 0..FLAPS_PER_CURTAIN * 2 {
+            let across =
+              (slot % FLAPS_PER_CURTAIN) as f32 / (FLAPS_PER_CURTAIN - 1) as f32 - 0.5;
+            let along = (slot / FLAPS_PER_CURTAIN) as f32 * 2.0 - 1.0;
+            commands.spawn((
+              Mesh3d(assets.flap_mesh.clone()),
+              MeshMaterial3d(assets.flap_material.clone()),
+              NotShadowCaster,
+              Transform::from_xyz(along * FLAP_REACH, 0.90, across * 1.42),
+              ChildOf(root)
+            ));
+          }
         }
         commands.spawn((
           upgrader,

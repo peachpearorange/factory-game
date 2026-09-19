@@ -7,6 +7,7 @@ use {crate::{catalog::{CELL, MachineAssets, MachineKind, place},
 const ANGLES: [f32; 4] = [35.0, 125.0, 215.0, 305.0];
 const PHASES: [(f32, &str); 3] = [(0.06, "dawn"), (0.25, "noon"), (0.78, "night")];
 const SETTLE: f32 = 0.5;
+const DRAIN: usize = 3;
 const ORBIT: f32 = 6.4;
 const RISE: f32 = 3.2;
 const FOCUS: Vec3 = Vec3::new(0.0, 1.05, 0.0);
@@ -85,16 +86,14 @@ fn frame_showcase(
   .looking_at(FOCUS, Vec3::Y);
 
   if showcase.timer.tick(time.delta()).just_finished() {
-    (showcase.shot < Showcase::COUNT)
-      .then(|| {
-        capture(
-          &mut commands,
-          &format!("showcase/{}-{moment}-{angle:.0}deg", slug(showcase.kind.spec().name))
-        )
-      })
-      .unwrap_or_else(|| {
-        quit.write(AppExit::Success);
-      });
+    if showcase.shot < Showcase::COUNT {
+      capture(
+        &mut commands,
+        &format!("showcase/{}-{moment}-{angle:.0}deg", slug(showcase.kind.spec().name))
+      );
+    } else if showcase.shot >= Showcase::COUNT + DRAIN {
+      quit.write(AppExit::Success);
+    }
     showcase.shot += 1;
   }
 }
