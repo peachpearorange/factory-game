@@ -6,7 +6,7 @@ use {crate::{catalog::CHUTE_REACH,
             prelude::*}};
 
 const DROP_HEIGHT: f32 = 0.92;
-const ARROW_SPEED: f32 = 0.85;
+const ARROW_SPEED: f32 = 0.45;
 pub const ARROW_SPAN: f32 = 1.2;
 
 #[derive(Component)]

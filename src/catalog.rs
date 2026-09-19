@@ -1181,7 +1181,7 @@ pub fn place(
         ChildOf(root)
       ));
       commands.entity(root).insert(Dropper {
-        timer: Timer::from_seconds(0.65, TimerMode::Repeating),
+        timer: Timer::from_seconds(1.6, TimerMode::Repeating),
         value: 12.0,
         form: OreForm::Rock
       });
@@ -1196,7 +1196,7 @@ pub fn place(
         Transform::from_xyz(CHUTE_REACH / 2.0, CHUTE_FLOOR, 0.0)
       ));
       commands.entity(root).insert(Dropper {
-        timer: Timer::from_seconds(1.1, TimerMode::Repeating),
+        timer: Timer::from_seconds(2.2, TimerMode::Repeating),
         value: 6.0,
         form: OreForm::Egg
       });
@@ -1333,7 +1333,7 @@ pub fn place(
     }
     _ => {
       commands.spawn((
-        ConveyorBelt { local_direction: Vec3::X, speed: 3.5 },
+        ConveyorBelt { local_direction: Vec3::X, speed: 1.8 },
         Collider::cuboid(1.98, BELT_TOP, 1.84),
         Friction::new(1.0),
         Transform::from_xyz(0.0, BELT_TOP / 2.0, 0.0),
