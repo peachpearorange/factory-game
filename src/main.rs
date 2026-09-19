@@ -1,3 +1,4 @@
+mod block;
 mod catalog;
 mod construction;
 mod icon;

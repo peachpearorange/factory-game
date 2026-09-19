@@ -1,4 +1,5 @@
-use {crate::{machine::{ARROW_SPAN, BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
+use {crate::{block::{self, Block},
+             machine::{ARROW_SPAN, BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
              ore::{Effects, OreForm},
              sdf, texture},
      avian3d::prelude::*,
@@ -277,7 +278,6 @@ impl MachineKind {
   const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba> {
     match self {
       Self::Dropper => Some(dropper_paint),
-      Self::Coop => Some(coop_paint),
       Self::Orewash => Some(orewash_paint),
       Self::Floodlight => Some(floodlight_paint),
       _ => None
@@ -394,38 +394,107 @@ fn machine_bounds() -> sdf::Bounds {
   sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7)
 }
 
-fn board(half: Vec3, at: Vec3) -> Tree {
-  let bounds = machine_bounds();
-  let (low, high) = (bounds.snap(at - half), bounds.snap(at + half));
-  sdf::at(sdf::cuboid((high - low) / 2.0), (low + high) / 2.0)
-}
+const TIMBER: LinearRgba = LinearRgba::rgb(0.58, 0.40, 0.24);
+const BARN: LinearRgba = LinearRgba::rgb(0.92, 0.24, 0.17);
+const SHINGLE: LinearRgba = LinearRgba::rgb(0.96, 0.96, 0.94);
+const STRAW: LinearRgba = LinearRgba::rgb(0.92, 0.76, 0.36);
+const COOP_FRONT: f32 = 0.08;
+const COOP_WALL: f32 = 0.06;
+const COOP_MID: f32 = CHUTE_FLOOR + 0.44;
+const RAMP_TOP: f32 = CHUTE_FLOOR + 0.05;
 
-fn coop_body() -> Tree {
+fn coop_blocks() -> impl Iterator<Item = Block> {
   let leg = |side: f32, along: f32| {
-    board(
+    Block::new(
       Vec3::new(0.07, CHUTE_FLOOR / 2.0, 0.07),
-      Vec3::new(DROPPER_BACK + along * 0.46, CHUTE_FLOOR / 2.0, side * 0.50)
+      Vec3::new(DROPPER_BACK + along * 0.46, CHUTE_FLOOR / 2.0, side * 0.50),
+      TIMBER
+    )
+  };
+  let wall = |side: f32| {
+    Block::new(
+      Vec3::new(0.56, 0.42, COOP_WALL),
+      Vec3::new(DROPPER_BACK, COOP_MID, side * 0.54),
+      BARN
+    )
+  };
+  let jamb = |side: f32| {
+    Block::new(
+      Vec3::new(COOP_WALL, 0.42, 0.20),
+      Vec3::new(COOP_FRONT, COOP_MID, side * 0.40),
+      BARN
     )
   };
   let roof = |slope: f32| {
-    sdf::at(
-      sdf::rotate_z(sdf::cuboid(Vec3::new(0.55, 0.05, 0.78)), -slope * 0.6),
-      Vec3::new(DROPPER_BACK + slope * 0.46, COOP_EAVES + 0.11, 0.0)
+    Block::new(
+      Vec3::new(0.55, 0.05, 0.78),
+      Vec3::new(DROPPER_BACK + slope * 0.46, COOP_EAVES + 0.11, 0.0),
+      SHINGLE
     )
+    .tilted(-slope * 0.6)
   };
   let rail = |side: f32| {
-    board(
+    Block::new(
       Vec3::new(CHUTE_REACH / 2.0 - 0.10, 0.06, 0.04),
-      Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, side * 0.30)
+      Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, side * 0.30),
+      STRAW
     )
   };
+  [
+    Block::new(
+      Vec3::new(0.62, 0.06, 0.66),
+      Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0),
+      TIMBER
+    ),
+    Block::new(
+      Vec3::new(COOP_WALL, 0.42, 0.60),
+      Vec3::new(DROPPER_BACK - 0.50, COOP_MID, 0.0),
+      BARN
+    ),
+    Block::new(
+      Vec3::new(COOP_WALL, 0.13, 0.20),
+      Vec3::new(COOP_FRONT, COOP_EAVES - 0.13, 0.0),
+      BARN
+    ),
+    Block::new(
+      Vec3::new(0.07, 0.05, 0.80),
+      Vec3::new(DROPPER_BACK, CHUTE_FLOOR + 1.26, 0.0),
+      SHINGLE
+    ),
+    Block::new(
+      Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32),
+      Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0),
+      STRAW
+    ),
+    Block::new(
+      Vec3::new(0.06, 0.12, 0.34),
+      Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.10, 0.0),
+      STRAW
+    ),
+    roof(1.0),
+    roof(-1.0),
+    wall(1.0),
+    wall(-1.0),
+    jamb(1.0),
+    jamb(-1.0),
+    rail(1.0),
+    rail(-1.0),
+    leg(1.0, 1.0),
+    leg(1.0, -1.0),
+    leg(-1.0, 1.0),
+    leg(-1.0, -1.0)
+  ]
+  .into_iter()
+}
+
+fn hen() -> Tree {
   let shank = |side: f32| {
     sdf::at(
       sdf::rounded_box(Vec3::new(0.035, 0.08, 0.035), 0.025),
-      Vec3::new(0.68, CHUTE_FLOOR + 0.13, side * 0.09)
+      Vec3::new(0.68, RAMP_TOP + 0.08, side * 0.09)
     )
   };
-  let hen = sdf::union([
+  sdf::union([
     sdf::smooth_union(
       sdf::at(sdf::sphere(0.23), Vec3::new(0.66, CHUTE_FLOOR + 0.32, 0.0)),
       sdf::at(sdf::sphere(0.14), Vec3::new(0.82, CHUTE_FLOOR + 0.56, 0.0)),
@@ -445,67 +514,32 @@ fn coop_body() -> Tree {
     ),
     shank(1.0),
     shank(-1.0)
-  ]);
-  sdf::union([
-    sdf::difference(
-      board(
-        Vec3::new(0.56, 0.42, 0.60),
-        Vec3::new(DROPPER_BACK, CHUTE_FLOOR + 0.44, 0.0)
-      ),
-      sdf::at(
-        sdf::along_x(sdf::cylinder(0.19, 0.40)),
-        Vec3::new(DROPPER_BACK + 0.40, CHUTE_FLOOR + 0.32, 0.0)
-      )
-    ),
-    board(Vec3::new(0.62, 0.06, 0.66), Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0)),
-    board(
-      Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32),
-      Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0)
-    ),
-    board(
-      Vec3::new(0.06, 0.12, 0.34),
-      Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.10, 0.0)
-    ),
-    roof(1.0),
-    roof(-1.0),
-    rail(1.0),
-    rail(-1.0),
-    leg(1.0, 1.0),
-    leg(1.0, -1.0),
-    leg(-1.0, 1.0),
-    leg(-1.0, -1.0),
-    hen
   ])
 }
 
-fn coop_paint(at: Vec3, _: Vec3) -> LinearRgba {
-  const TIMBER: LinearRgba = LinearRgba::rgb(0.58, 0.40, 0.24);
-  const BARN: LinearRgba = LinearRgba::rgb(0.92, 0.24, 0.17);
-  const SHINGLE: LinearRgba = LinearRgba::rgb(0.96, 0.96, 0.94);
-  const STRAW: LinearRgba = LinearRgba::rgb(0.92, 0.76, 0.36);
+fn hen_paint(at: Vec3, _: Vec3) -> LinearRgba {
   const PLUMAGE: LinearRgba = LinearRgba::rgb(0.99, 0.98, 0.95);
   const COMB: LinearRgba = LinearRgba::rgb(0.95, 0.16, 0.11);
   const BEAK: LinearRgba = LinearRgba::rgb(0.99, 0.74, 0.14);
 
-  if (0.40..1.10).contains(&at.x) && at.z.abs() < 0.26 && at.y > CHUTE_FLOOR + 0.06 {
-    if at.x > 0.90 || at.y < CHUTE_FLOOR + 0.22 {
-      BEAK
-    } else if at.x > 0.60 && at.y > CHUTE_FLOOR + 0.70 {
-      COMB
-    } else {
-      PLUMAGE
-    }
-  } else if at.y < CHUTE_FLOOR - 0.12 {
-    TIMBER
-  } else if at.y > COOP_EAVES
-    || (at.y > CHUTE_FLOOR + 0.56 && !(DROPPER_BACK - 0.58..0.16).contains(&at.x))
-  {
-    SHINGLE
-  } else if at.x > 0.16 {
-    STRAW
+  if at.x > 0.90 || at.y < CHUTE_FLOOR + 0.22 {
+    BEAK
+  } else if at.x > 0.60 && at.y > CHUTE_FLOOR + 0.70 {
+    COMB
   } else {
-    BARN
+    PLUMAGE
   }
+}
+
+fn coop_mesh() -> Mesh {
+  block::assembled(
+    coop_blocks(),
+    block::smooth(sdf::bake_painted(
+      hen(),
+      sdf::Bounds::around(Vec3::new(0.70, CHUTE_FLOOR + 0.42, 0.0), 0.62, 7),
+      hen_paint
+    ))
+  )
 }
 
 fn oven_shell() -> Tree {
@@ -910,17 +944,18 @@ impl MachineAssets {
   }
 
   fn baked(kind: MachineKind) -> Mesh {
-    kind
-      .paint()
-      .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(), paint))
-      .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds()))
+    (kind == MachineKind::Coop).then(coop_mesh).unwrap_or_else(|| {
+      kind
+        .paint()
+        .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(), paint))
+        .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds()))
+    })
   }
 
   fn shape(kind: MachineKind) -> Tree {
     match kind {
       MachineKind::Conveyor => belt_deck(),
       MachineKind::Dropper => dropper_body(),
-      MachineKind::Coop => coop_body(),
       MachineKind::Furnace => oven_shell(),
       MachineKind::FlameJet => jet_nozzle(),
       MachineKind::Orewash => orewash_tunnel(),

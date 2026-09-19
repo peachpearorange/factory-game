@@ -98,12 +98,6 @@ impl Bounds {
     Self { center, half_extent, depth }
   }
 
-  pub fn step(&self) -> f32 { 2.0 * self.half_extent / (1u32 << self.depth) as f32 }
-
-  pub fn snap(&self, point: Vec3) -> Vec3 {
-    self.center + ((point - self.center) / self.step()).round() * self.step()
-  }
-
   fn world_to_model(&self) -> Matrix4<f32> {
     Matrix4::new_translation(&Vector3::new(self.center.x, self.center.y, self.center.z))
       * Matrix4::new_scaling(self.half_extent)
@@ -113,7 +107,7 @@ impl Bounds {
 const CREASE: f32 = 0.72;
 const SLIVER: f32 = 1e-9;
 
-fn box_uv(position: Vec3, normal: Vec3) -> [f32; 2] {
+pub fn box_uv(position: Vec3, normal: Vec3) -> [f32; 2] {
   let axis = normal.abs();
   if axis.x > axis.y && axis.x > axis.z {
     [position.z, -position.y]
