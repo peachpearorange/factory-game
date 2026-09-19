@@ -70,6 +70,7 @@ enum Surface {
   Painted,
   Plastic,
   Wood,
+  Planked,
   Metal
 }
 
@@ -79,7 +80,16 @@ impl Surface {
       Self::Painted => Finish { roughness: 0.6, metallic: 0.35, reflectance: 0.5 },
       Self::Plastic => Finish { roughness: 0.42, metallic: 0.0, reflectance: 0.38 },
       Self::Wood => Finish { roughness: 0.88, metallic: 0.0, reflectance: 0.14 },
+      Self::Planked => Finish { roughness: 0.80, metallic: 0.0, reflectance: 0.20 },
       Self::Metal => Finish { roughness: 0.24, metallic: 0.95, reflectance: 0.72 }
+    }
+  }
+
+  const fn tiling(self) -> Option<Vec2> {
+    match self {
+      Self::Wood => Some(texture::GRAIN),
+      Self::Planked => Some(texture::PLANK),
+      _ => None
     }
   }
 }
@@ -256,8 +266,9 @@ impl MachineKind {
 
   const fn surface(self) -> Surface {
     match self {
-      Self::Orewash | Self::Coop => Surface::Plastic,
+      Self::Orewash => Surface::Plastic,
       Self::Torch | Self::Bonfire => Surface::Wood,
+      Self::Coop => Surface::Planked,
       Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
       _ => Surface::Painted
     }
@@ -379,22 +390,32 @@ fn dropper_paint(at: Vec3, _: Vec3) -> LinearRgba {
   }
 }
 
+fn machine_bounds() -> sdf::Bounds {
+  sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7)
+}
+
+fn board(half: Vec3, at: Vec3) -> Tree {
+  let bounds = machine_bounds();
+  let (low, high) = (bounds.snap(at - half), bounds.snap(at + half));
+  sdf::at(sdf::cuboid((high - low) / 2.0), (low + high) / 2.0)
+}
+
 fn coop_body() -> Tree {
   let leg = |side: f32, along: f32| {
-    sdf::at(
-      sdf::rounded_box(Vec3::new(0.07, CHUTE_FLOOR / 2.0, 0.07), 0.04),
+    board(
+      Vec3::new(0.07, CHUTE_FLOOR / 2.0, 0.07),
       Vec3::new(DROPPER_BACK + along * 0.46, CHUTE_FLOOR / 2.0, side * 0.50)
     )
   };
   let roof = |slope: f32| {
     sdf::at(
-      sdf::rotate_z(sdf::rounded_box(Vec3::new(0.55, 0.05, 0.78), 0.04), -slope * 0.6),
+      sdf::rotate_z(sdf::cuboid(Vec3::new(0.55, 0.05, 0.78)), -slope * 0.6),
       Vec3::new(DROPPER_BACK + slope * 0.46, COOP_EAVES + 0.11, 0.0)
     )
   };
   let rail = |side: f32| {
-    sdf::at(
-      sdf::rounded_box(Vec3::new(CHUTE_REACH / 2.0 - 0.10, 0.06, 0.04), 0.03),
+    board(
+      Vec3::new(CHUTE_REACH / 2.0 - 0.10, 0.06, 0.04),
       Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, side * 0.30)
     )
   };
@@ -427,8 +448,8 @@ fn coop_body() -> Tree {
   ]);
   sdf::union([
     sdf::difference(
-      sdf::at(
-        sdf::rounded_box(Vec3::new(0.56, 0.42, 0.60), 0.07),
+      board(
+        Vec3::new(0.56, 0.42, 0.60),
         Vec3::new(DROPPER_BACK, CHUTE_FLOOR + 0.44, 0.0)
       ),
       sdf::at(
@@ -436,16 +457,13 @@ fn coop_body() -> Tree {
         Vec3::new(DROPPER_BACK + 0.40, CHUTE_FLOOR + 0.32, 0.0)
       )
     ),
-    sdf::at(
-      sdf::rounded_box(Vec3::new(0.62, 0.06, 0.66), 0.04),
-      Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0)
-    ),
-    sdf::at(
-      sdf::rounded_box(Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32), 0.04),
+    board(Vec3::new(0.62, 0.06, 0.66), Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0)),
+    board(
+      Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32),
       Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0)
     ),
-    sdf::at(
-      sdf::rounded_box(Vec3::new(0.06, 0.12, 0.34), 0.05),
+    board(
+      Vec3::new(0.06, 0.12, 0.34),
       Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.10, 0.0)
     ),
     roof(1.0),
@@ -461,13 +479,13 @@ fn coop_body() -> Tree {
 }
 
 fn coop_paint(at: Vec3, _: Vec3) -> LinearRgba {
-  const TIMBER: LinearRgba = LinearRgba::rgb(0.46, 0.31, 0.18);
-  const BARN: LinearRgba = LinearRgba::rgb(0.86, 0.21, 0.15);
-  const SHINGLE: LinearRgba = LinearRgba::rgb(0.93, 0.93, 0.91);
-  const STRAW: LinearRgba = LinearRgba::rgb(0.88, 0.72, 0.34);
-  const PLUMAGE: LinearRgba = LinearRgba::rgb(0.97, 0.96, 0.93);
-  const COMB: LinearRgba = LinearRgba::rgb(0.88, 0.14, 0.10);
-  const BEAK: LinearRgba = LinearRgba::rgb(0.97, 0.68, 0.12);
+  const TIMBER: LinearRgba = LinearRgba::rgb(0.58, 0.40, 0.24);
+  const BARN: LinearRgba = LinearRgba::rgb(0.92, 0.24, 0.17);
+  const SHINGLE: LinearRgba = LinearRgba::rgb(0.96, 0.96, 0.94);
+  const STRAW: LinearRgba = LinearRgba::rgb(0.92, 0.76, 0.36);
+  const PLUMAGE: LinearRgba = LinearRgba::rgb(0.99, 0.98, 0.95);
+  const COMB: LinearRgba = LinearRgba::rgb(0.95, 0.16, 0.11);
+  const BEAK: LinearRgba = LinearRgba::rgb(0.99, 0.74, 0.14);
 
   if (0.40..1.10).contains(&at.x) && at.z.abs() < 0.26 && at.y > CHUTE_FLOOR + 0.06 {
     if at.x > 0.90 || at.y < CHUTE_FLOOR + 0.22 {
@@ -892,11 +910,10 @@ impl MachineAssets {
   }
 
   fn baked(kind: MachineKind) -> Mesh {
-    let bounds = || sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7);
     kind
       .paint()
-      .map(|paint| sdf::bake_painted(Self::shape(kind), bounds(), paint))
-      .unwrap_or_else(|| sdf::bake(Self::shape(kind), bounds()))
+      .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(), paint))
+      .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds()))
   }
 
   fn shape(kind: MachineKind) -> Tree {
@@ -942,15 +959,19 @@ fn load_machine_assets(
   let machine_meshes =
     MachineKind::ALL.map(|kind| meshes.add(MachineAssets::baked(kind)));
   let grain = images.add(texture::wood());
+  let boards = images.add(texture::planks());
   let machine_materials = MachineKind::ALL.map(|kind| {
     let (base_color, emissive) = kind.accent();
     let surface = kind.surface();
     let Finish { roughness, metallic, reflectance } = surface.finish();
+    let tiling = surface.tiling().unwrap_or(Vec2::ONE);
     materials.add(StandardMaterial {
       base_color,
       emissive,
-      base_color_texture: (surface == Surface::Wood).then(|| grain.clone()),
-      uv_transform: Affine2::from_scale(Vec2::ONE / texture::GRAIN),
+      base_color_texture: (surface == Surface::Wood)
+        .then(|| grain.clone())
+        .or_else(|| (surface == Surface::Planked).then(|| boards.clone())),
+      uv_transform: Affine2::from_scale(Vec2::ONE / tiling),
       perceptual_roughness: roughness,
       reflectance,
       metallic,

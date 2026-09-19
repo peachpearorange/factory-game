@@ -63,6 +63,23 @@ pub fn concrete() -> Image {
   })
 }
 
+pub const PLANK: Vec2 = Vec2::new(0.96, 0.96);
+const BOARDS: f32 = 4.0;
+
+pub fn planks() -> Image {
+  tiling(|u, v| {
+    let seam = |t: f32| {
+      let edge = (t * BOARDS).fract();
+      (edge.min(1.0 - edge) * BOARDS * 7.0).min(1.0)
+    };
+    let fibre = 0.62 * noise(u, v, 70, 14) + 0.38 * noise(u, v, 18, 6);
+    let board = hash((v * BOARDS) as i32, 0, BOARDS as i32, 1);
+    let shade = (0.86 + 0.09 * fibre + 0.05 * board) * (0.76 + 0.24 * seam(v));
+    let level = (shade.clamp(0.0, 1.0) * 255.0) as u8;
+    [level, level, (level as f32 * 0.98) as u8, 255]
+  })
+}
+
 pub fn wood() -> Image {
   const PALE: Vec3 = Vec3::new(0.56, 0.40, 0.23);
   const DARK: Vec3 = Vec3::new(0.19, 0.11, 0.05);
