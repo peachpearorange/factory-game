@@ -7,7 +7,6 @@ use {crate::{catalog::CHUTE_REACH,
 
 const DROP_HEIGHT: f32 = 0.92;
 const ARROW_SPEED: f32 = 0.45;
-pub const ARROW_SPAN: f32 = 1.2;
 
 #[derive(Component)]
 #[require(ActiveCollisionHooks::MODIFY_CONTACTS)]
@@ -17,12 +16,15 @@ pub struct ConveyorBelt {
 }
 
 #[derive(Component)]
-pub struct BeltArrow(pub f32);
+pub struct BeltArrow {
+  pub phase: f32,
+  pub span: f32
+}
 
 fn slide_belt_arrows(time: Res<Time>, mut arrows: Query<(&BeltArrow, &mut Transform)>) {
-  for (BeltArrow(phase), mut transform) in &mut arrows {
-    let travel = (phase + time.elapsed_secs() * ARROW_SPEED).rem_euclid(1.0);
-    transform.translation.x = (travel - 0.5) * ARROW_SPAN;
+  for (arrow, mut transform) in &mut arrows {
+    let travel = (arrow.phase + time.elapsed_secs() * ARROW_SPEED).rem_euclid(1.0);
+    transform.translation.x = (travel - 0.5) * arrow.span;
     transform.scale = Vec3::splat((4.0 * travel * (1.0 - travel)).sqrt());
   }
 }

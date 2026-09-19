@@ -1,5 +1,5 @@
 use {crate::{block::{self, Block},
-             machine::{ARROW_SPAN, BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
+             machine::{BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
              ore::{Effects, OreForm},
              sdf, texture},
      avian3d::prelude::*,
@@ -18,7 +18,8 @@ use {crate::{block::{self, Block},
 
 pub const CELL: f32 = 2.0;
 pub const BELT_TOP: f32 = 0.22;
-const ARROWS_PER_BELT: usize = 3;
+const ARROWS_PER_CELL: usize = 3;
+const ARROW_INSET: f32 = 0.8;
 const HEARTH_HALF: f32 = 0.94;
 const HEARTH_WALL: f32 = 0.11;
 const HEARTH_PAN: f32 = 0.14;
@@ -37,6 +38,7 @@ const BRUSH_TOP: f32 = 1.30;
 const BRUSH_HALF: f32 = 0.50;
 const FLAPS_PER_CURTAIN: usize = 5;
 const FLAP_REACH: f32 = 0.87;
+const CHILL_CELLS: i32 = 2;
 const BONFIRE_TOP: f32 = 0.92;
 const TORCH_HEAD: f32 = 1.25;
 const LAMP_HEIGHT: f32 = 2.0;
@@ -49,6 +51,8 @@ const TORCH_GLOW: Color = Color::srgb(1.0, 0.66, 0.30);
 const EMBER_GLOW: Color = Color::srgb(1.0, 0.42, 0.10);
 const LAMP_GLOW: Color = Color::srgb(1.0, 0.95, 0.86);
 
+const fn belt_half(cells: i32) -> f32 { cells as f32 * CELL / 2.0 - 0.01 }
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum MachineKind {
   Conveyor,
@@ -59,6 +63,7 @@ pub enum MachineKind {
   FlameJet,
   MistCoil,
   Orewash,
+  ChillBeam,
   DecayChamber,
   Torch,
   Bonfire,
@@ -131,7 +136,7 @@ impl Tier {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 13] = [
+  pub const ALL: [Self; 14] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Coop,
@@ -140,6 +145,7 @@ impl MachineKind {
     Self::FlameJet,
     Self::MistCoil,
     Self::Orewash,
+    Self::ChillBeam,
     Self::DecayChamber,
     Self::Torch,
     Self::Bonfire,
@@ -158,8 +164,24 @@ impl MachineKind {
         | Self::FlameJet
         | Self::MistCoil
         | Self::Orewash
+        | Self::ChillBeam
         | Self::DecayChamber
     )
+  }
+
+  pub const fn footprint(self) -> IVec2 {
+    match self {
+      Self::ChillBeam => IVec2::new(CHILL_CELLS, 1),
+      _ => IVec2::ONE
+    }
+  }
+
+  pub const fn span(self, turns: u8) -> IVec2 {
+    let footprint = self.footprint();
+    match turns % 2 {
+      0 => footprint,
+      _ => IVec2::new(footprint.y, footprint.x)
+    }
   }
 
   pub const fn spec(self) -> MachineSpec {
@@ -220,6 +242,13 @@ impl MachineKind {
         tier: Tier::Refined,
         unlock: None
       },
+      Self::ChillBeam => MachineSpec {
+        name: "Chill Beam",
+        blurb: "A long frost gantry. The beam rimes whatever crawls beneath it.",
+        price: 1500.0,
+        tier: Tier::Exotic,
+        unlock: None
+      },
       Self::DecayChamber => MachineSpec {
         name: "Decay Chamber",
         blurb: "Leaves ore humming and faintly green for a very long time.",
@@ -264,6 +293,7 @@ impl MachineKind {
       Self::FlameJet => Some(Upgrader { multiplier: 3.2, effects: Effects::FIERY }),
       Self::MistCoil => Some(Upgrader { multiplier: 4.0, effects: Effects::WET }),
       Self::Orewash => Some(Upgrader { multiplier: 3.0, effects: Effects::WET }),
+      Self::ChillBeam => Some(Upgrader { multiplier: 5.0, effects: Effects::FROSTY }),
       Self::DecayChamber => {
         Some(Upgrader { multiplier: 9.0, effects: Effects::RADIOACTIVE })
       }
@@ -284,6 +314,7 @@ impl MachineKind {
       Self::Torch | Self::Bonfire => Surface::Wood,
       Self::Coop => Surface::Planked,
       Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
+      Self::ChillBeam => Surface::Plastic,
       _ => Surface::Painted
     }
   }
@@ -292,6 +323,7 @@ impl MachineKind {
     match self {
       Self::Dropper => Some(dropper_paint),
       Self::Orewash => Some(orewash_paint),
+      Self::ChillBeam => Some(chill_paint),
       Self::Floodlight => Some(floodlight_paint),
       _ => None
     }
@@ -307,7 +339,7 @@ impl MachineKind {
       Self::MistCoil => {
         (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
       }
-      Self::Orewash => (Color::WHITE, LinearRgba::BLACK),
+      Self::Orewash | Self::ChillBeam => (Color::WHITE, LinearRgba::BLACK),
       Self::DecayChamber => {
         (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
       }
@@ -318,20 +350,20 @@ impl MachineKind {
   }
 }
 
-fn belt_deck() -> Tree {
+fn belt_deck(half: f32) -> Tree {
   sdf::union([
     sdf::at(
-      sdf::rounded_box(Vec3::new(0.99, BELT_TOP / 2.0, 0.92), 0.05),
+      sdf::rounded_box(Vec3::new(half, BELT_TOP / 2.0, 0.92), 0.05),
       Vec3::new(0.0, BELT_TOP / 2.0, 0.0)
     ),
-    sdf::at(sdf::cuboid(Vec3::new(0.99, 0.10, 0.06)), Vec3::new(0.0, 0.16, 0.95)),
-    sdf::at(sdf::cuboid(Vec3::new(0.99, 0.10, 0.06)), Vec3::new(0.0, 0.16, -0.95))
+    sdf::at(sdf::cuboid(Vec3::new(half, 0.10, 0.06)), Vec3::new(0.0, 0.16, 0.95)),
+    sdf::at(sdf::cuboid(Vec3::new(half, 0.10, 0.06)), Vec3::new(0.0, 0.16, -0.95))
   ])
 }
 
 fn arch() -> Tree {
   sdf::union([
-    belt_deck(),
+    belt_deck(belt_half(1)),
     sdf::difference(
       sdf::at(
         sdf::rounded_box(Vec3::new(0.52, 1.25, 0.99), 0.12),
@@ -403,8 +435,9 @@ fn dropper_paint(at: Vec3, _: Vec3) -> LinearRgba {
   }
 }
 
-fn machine_bounds() -> sdf::Bounds {
-  sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7)
+fn machine_bounds(kind: MachineKind) -> sdf::Bounds {
+  let reach = (kind.footprint().max_element() as f32 * CELL / 2.0 + 0.13).max(1.7);
+  sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), reach, 7)
 }
 
 const TIMBER: LinearRgba = LinearRgba::rgb(0.58, 0.40, 0.24);
@@ -647,7 +680,7 @@ fn bonfire_pile() -> Tree {
 
 fn jet_nozzle() -> Tree {
   sdf::union([
-    belt_deck(),
+    belt_deck(belt_half(1)),
     sdf::at(
       sdf::rounded_box(Vec3::new(0.34, 0.46, 0.30), 0.09),
       Vec3::new(0.0, 0.46, -1.12)
@@ -699,7 +732,7 @@ fn orewash_tunnel() -> Tree {
   };
   sdf::union(
     [
-      belt_deck(),
+      belt_deck(belt_half(1)),
       rail(1.0),
       rail(-1.0),
       nozzle(1.0),
@@ -748,6 +781,108 @@ fn orewash_paint(at: Vec3, _: Vec3) -> LinearRgba {
   }
 }
 
+const CHILL_HALF: f32 = belt_half(CHILL_CELLS);
+const CHILL_GANTRY: f32 = 2.05;
+const CHILL_DRUM: f32 = 0.36;
+const CHILL_MOUTH: f32 = 1.34;
+const CHILL_LEG: f32 = CHILL_HALF - 0.36;
+const CHILL_RAIL: f32 = 0.92;
+const CHILL_TANK: f32 = 1.02;
+const CHILL_GLOW: Color = Color::srgb(0.58, 0.90, 1.0);
+
+fn chill_gantry() -> Tree {
+  let leg = |along: f32, across: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.10, CHILL_GANTRY / 2.0, 0.10), 0.04),
+      Vec3::new(along * CHILL_LEG, CHILL_GANTRY / 2.0, across * CHILL_RAIL)
+    )
+  };
+  let rail = |across: f32| {
+    sdf::at(
+      sdf::along_x(sdf::rounded_cylinder(0.11, CHILL_LEG, 0.05)),
+      Vec3::new(0.0, CHILL_GANTRY, across * CHILL_RAIL)
+    )
+  };
+  let tank = |across: f32| {
+    sdf::at(
+      sdf::along_x(sdf::rounded_cylinder(0.24, 1.26, 0.08)),
+      Vec3::new(0.0, CHILL_TANK, across * CHILL_RAIL)
+    )
+  };
+  let yoke = |along: f32| {
+    sdf::at(
+      sdf::cuboid(Vec3::new(0.09, 0.09, CHILL_RAIL)),
+      Vec3::new(along * 0.86, CHILL_GANTRY, 0.0)
+    )
+  };
+  let fin = |along: f32| {
+    sdf::at(
+      sdf::along_x(sdf::rounded_cylinder(CHILL_DRUM + 0.12, 0.04, 0.03)),
+      Vec3::new(along * 0.46, CHILL_GANTRY, 0.0)
+    )
+  };
+  let spike = |along: f32, across: f32| {
+    sdf::at(
+      sdf::rotate_z(sdf::rounded_box(Vec3::new(0.06, 0.20, 0.06), 0.02), across * 0.26),
+      Vec3::new(along * 0.92, BELT_TOP + 0.20, across * 0.95)
+    )
+  };
+  sdf::union([
+    belt_deck(CHILL_HALF),
+    tank(1.0),
+    tank(-1.0),
+    rail(1.0),
+    rail(-1.0),
+    leg(1.0, 1.0),
+    leg(1.0, -1.0),
+    leg(-1.0, 1.0),
+    leg(-1.0, -1.0),
+    yoke(1.0),
+    yoke(-1.0),
+    sdf::at(
+      sdf::along_x(sdf::rounded_cylinder(CHILL_DRUM, 0.95, 0.10)),
+      Vec3::new(0.0, CHILL_GANTRY, 0.0)
+    ),
+    fin(1.0),
+    fin(-1.0),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.26, 0.32, 0.26), 0.07),
+      Vec3::new(0.0, CHILL_GANTRY - 0.44, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_cylinder(0.19, 0.18, 0.05),
+      Vec3::new(0.0, CHILL_MOUTH + 0.16, 0.0)
+    ),
+    spike(1.0, 1.0),
+    spike(1.0, -1.0),
+    spike(-1.0, 1.0),
+    spike(-1.0, -1.0)
+  ])
+}
+
+fn chill_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const DECK: LinearRgba = LinearRgba::rgb(0.05, 0.07, 0.09);
+  const ICE: LinearRgba = LinearRgba::rgb(0.40, 0.66, 0.84);
+  const RIME: LinearRgba = LinearRgba::rgb(0.88, 0.96, 1.0);
+  const STEEL: LinearRgba = LinearRgba::rgb(0.13, 0.27, 0.40);
+  const BEAM: LinearRgba = LinearRgba::rgb(0.26, 0.86, 1.0);
+
+  let core = at.z.abs() < 0.46;
+  if at.y < 0.34 {
+    DECK
+  } else if at.y < BELT_TOP + 0.46 && at.x.abs() < 1.2 {
+    RIME
+  } else if at.y > CHILL_GANTRY + CHILL_DRUM - 0.12 {
+    RIME
+  } else if core && at.y < CHILL_MOUTH + 0.22 {
+    BEAM
+  } else if core {
+    STEEL
+  } else {
+    ICE
+  }
+}
+
 fn torch_post() -> Tree {
   sdf::union([
     sdf::at(
@@ -776,6 +911,15 @@ fn water_gradient() -> bevy_hanabi::Gradient<Vec4> {
     (0.15, Vec4::new(0.74, 0.92, 1.0, 0.85)),
     (0.7, Vec4::new(0.42, 0.70, 0.98, 0.6)),
     (1.0, Vec4::new(0.26, 0.52, 0.90, 0.0))
+  ])
+}
+
+fn frost_gradient() -> bevy_hanabi::Gradient<Vec4> {
+  bevy_hanabi::Gradient::from_keys([
+    (0.0, Vec4::new(0.60, 2.40, 4.60, 1.0)),
+    (0.25, Vec4::new(0.30, 1.40, 3.20, 0.9)),
+    (0.7, Vec4::new(0.12, 0.55, 1.60, 0.6)),
+    (1.0, Vec4::new(0.04, 0.14, 0.50, 0.0))
   ])
 }
 
@@ -840,6 +984,19 @@ impl Plume {
     lift: -4.5,
     colors: water_gradient,
     blend: bevy_hanabi::AlphaMode::Blend
+  };
+
+  const CHILL: Self = Self {
+    name: "chill beam",
+    thrust: Vec3::new(0.0, -5.2, 0.0),
+    spread: 0.30,
+    source: 0.11,
+    girth: 0.17,
+    life: 0.55,
+    rate: 820.0,
+    lift: -3.0,
+    colors: frost_gradient,
+    blend: bevy_hanabi::AlphaMode::Add
   };
 
   fn asset(self) -> EffectAsset {
@@ -958,6 +1115,7 @@ pub struct MachineAssets {
   bonfire_flame: Handle<EffectAsset>,
   jet_flame: Handle<EffectAsset>,
   wash_spray: Handle<EffectAsset>,
+  chill_frost: Handle<EffectAsset>,
   chute_mesh: Handle<Mesh>,
   chute_material: Handle<StandardMaterial>,
   lens_mesh: Handle<Mesh>,
@@ -968,6 +1126,7 @@ pub struct MachineAssets {
   coals_mesh: Handle<Mesh>,
   coals_glow: Handle<StandardMaterial>,
   lamp_glow: Handle<StandardMaterial>,
+  chill_glow: Handle<StandardMaterial>,
   pub ghost_valid: Handle<StandardMaterial>,
   pub ghost_blocked: Handle<StandardMaterial>
 }
@@ -986,17 +1145,18 @@ impl MachineAssets {
     .unwrap_or_else(|| {
       kind
         .paint()
-        .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(), paint))
-        .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds()))
+        .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(kind), paint))
+        .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds(kind)))
     })
   }
 
   fn shape(kind: MachineKind) -> Tree {
     match kind {
-      MachineKind::Conveyor => belt_deck(),
+      MachineKind::Conveyor => belt_deck(belt_half(1)),
       MachineKind::Dropper => dropper_body(),
       MachineKind::FlameJet => jet_nozzle(),
       MachineKind::Orewash => orewash_tunnel(),
+      MachineKind::ChillBeam => chill_gantry(),
       MachineKind::Torch => torch_post(),
       MachineKind::Bonfire => bonfire_pile(),
       MachineKind::Lamp => lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT),
@@ -1099,8 +1259,12 @@ fn load_machine_assets(
         brightness: 900.0,
         ..default()
       },
-      Transform::from_translation(stage + Vec3::new(3.3, 3.0, 3.9))
-        .looking_at(focus, Vec3::Y),
+      Transform::from_translation(
+        stage
+          + Vec3::new(3.3, 3.0, 3.9)
+            * (0.72 + 0.28 * kind.footprint().max_element() as f32)
+      )
+      .looking_at(focus, Vec3::Y),
       layer
     ));
     image
@@ -1139,6 +1303,7 @@ fn load_machine_assets(
     bonfire_flame: effects.add(Plume::BONFIRE.asset()),
     jet_flame: effects.add(Plume::JET.asset()),
     wash_spray: effects.add(Plume::WASH.asset()),
+    chill_frost: effects.add(Plume::CHILL.asset()),
     chute_mesh: meshes.add(Cuboid::new(CHUTE_REACH - 0.18, 0.44, 0.44)),
     chute_material: materials.add(StandardMaterial {
       base_color: Color::srgba(0.42, 0.86, 0.98, 0.30),
@@ -1183,24 +1348,41 @@ fn load_machine_assets(
       emissive: LinearRgba::rgb(38.0, 34.0, 25.0),
       ..default()
     }),
+    chill_glow: materials.add(StandardMaterial {
+      base_color: CHILL_GLOW,
+      emissive: LinearRgba::rgb(0.6, 5.0, 12.0),
+      ..default()
+    }),
     ghost_valid: materials.add(ghost(Color::srgba(0.25, 0.95, 0.45, 0.35))),
     ghost_blocked: materials.add(ghost(Color::srgba(0.95, 0.25, 0.25, 0.30)))
   });
 }
 
-fn arrow_at(assets: &MachineAssets, slide: f32) -> impl Bundle {
+fn arrow_span(kind: MachineKind) -> f32 { kind.footprint().x as f32 * CELL - ARROW_INSET }
+
+fn arrows_along(kind: MachineKind) -> usize {
+  ARROWS_PER_CELL * kind.footprint().x as usize
+}
+
+fn arrow_at(assets: &MachineAssets, offset: f32) -> impl Bundle {
   (
     Mesh3d(assets.arrow_mesh.clone()),
     MeshMaterial3d(assets.arrow_material.clone()),
-    Transform::from_xyz(slide * ARROW_SPAN, BELT_TOP + 0.02, 0.0)
+    Transform::from_xyz(offset, BELT_TOP + 0.02, 0.0)
       .with_rotation(Quat::from_rotation_x(-FRAC_PI_2))
   )
 }
 
-pub fn spawn_ghost_arrows(commands: &mut Commands, assets: &MachineAssets, root: Entity) {
-  for step in 0..ARROWS_PER_BELT {
-    let slide = step as f32 / (ARROWS_PER_BELT - 1) as f32 - 0.5;
-    commands.spawn((arrow_at(assets, slide), ChildOf(root)));
+pub fn spawn_ghost_arrows(
+  commands: &mut Commands,
+  assets: &MachineAssets,
+  kind: MachineKind,
+  root: Entity
+) {
+  let arrows = arrows_along(kind);
+  for step in 0..arrows {
+    let slide = step as f32 / (arrows - 1) as f32 - 0.5;
+    commands.spawn((arrow_at(assets, slide * arrow_span(kind)), ChildOf(root)));
   }
 }
 
@@ -1421,22 +1603,24 @@ pub fn place(
       ));
     }
     _ => {
+      let length = kind.footprint().x as f32 * CELL - 0.02;
       commands.spawn((
         ConveyorBelt { local_direction: Vec3::X, speed: 1.8 },
-        Collider::cuboid(1.98, BELT_TOP, 1.84),
+        Collider::cuboid(length, BELT_TOP, 1.84),
         Friction::new(1.0),
         Transform::from_xyz(0.0, BELT_TOP / 2.0, 0.0),
         ChildOf(root)
       ));
       for side in [-1.0, 1.0] {
         parts.push((
-          Collider::cuboid(1.98, 0.20, 0.12),
+          Collider::cuboid(length, 0.20, 0.12),
           Transform::from_xyz(0.0, 0.16, side * 0.95)
         ));
       }
-      for step in 0..ARROWS_PER_BELT {
+      let arrows = arrows_along(kind);
+      for step in 0..arrows {
         commands.spawn((
-          BeltArrow(step as f32 / ARROWS_PER_BELT as f32),
+          BeltArrow { phase: step as f32 / arrows as f32, span: arrow_span(kind) },
           arrow_at(assets, 0.0),
           ChildOf(root)
         ));
@@ -1450,6 +1634,45 @@ pub fn place(
           commands.spawn((
             ParticleEffect::new(assets.jet_flame.clone()),
             Transform::from_xyz(0.0, JET_HEIGHT, -0.26),
+            ChildOf(root)
+          ));
+        } else if kind == MachineKind::ChillBeam {
+          for along in [-1.0, 1.0] {
+            for across in [-1.0, 1.0] {
+              parts.push((
+                Collider::cuboid(0.26, CHILL_GANTRY, 0.26),
+                Transform::from_xyz(
+                  along * CHILL_LEG,
+                  CHILL_GANTRY / 2.0,
+                  across * CHILL_RAIL
+                )
+              ));
+            }
+            parts.push((
+              Collider::cuboid(2.6, 0.58, 0.58),
+              Transform::from_xyz(0.0, CHILL_TANK, along * CHILL_RAIL)
+            ));
+          }
+          parts.push((
+            Collider::cuboid(CHILL_LEG * 2.0, 1.1, 2.1),
+            Transform::from_xyz(0.0, CHILL_GANTRY, 0.0)
+          ));
+          commands.spawn((
+            ParticleEffect::new(assets.chill_frost.clone()),
+            Transform::from_xyz(0.0, CHILL_MOUTH, 0.0),
+            ChildOf(root)
+          ));
+          commands.spawn((
+            PointLight {
+              color: CHILL_GLOW,
+              intensity: 240_000.0,
+              range: 12.0,
+              ..default()
+            },
+            Mesh3d(assets.glow_mesh.clone()),
+            MeshMaterial3d(assets.chill_glow.clone()),
+            NotShadowCaster,
+            Transform::from_xyz(0.0, CHILL_MOUTH, 0.0).with_scale(Vec3::splat(0.12)),
             ChildOf(root)
           ));
         } else {

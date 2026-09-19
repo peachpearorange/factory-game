@@ -45,10 +45,11 @@ fn wanted() -> Option<MachineKind> {
 fn stage_showcase(assets: Res<MachineAssets>, mut commands: Commands) {
   if let Some(kind) = wanted() {
     let at = |cell: f32| Transform::from_xyz(cell * CELL, 0.0, 0.0);
+    let flank = kind.footprint().x as f32 / 2.0 + 0.5;
     place(&mut commands, &assets, kind, at(0.0));
     if kind.carries_belt() {
-      place(&mut commands, &assets, MachineKind::Conveyor, at(-1.0));
-      place(&mut commands, &assets, MachineKind::Conveyor, at(1.0));
+      place(&mut commands, &assets, MachineKind::Conveyor, at(-flank));
+      place(&mut commands, &assets, MachineKind::Conveyor, at(flank));
     }
     commands.insert_resource(Showcase {
       kind,
@@ -80,8 +81,9 @@ fn frame_showcase(
   let (angle, (phase, moment)) = showcase.framing();
   clock.pin(phase, time.elapsed_secs());
   let yaw = angle.to_radians();
+  let orbit = ORBIT + (showcase.kind.footprint().max_element() - 1) as f32 * CELL;
   **camera = Transform::from_translation(
-    FOCUS + Vec3::new(yaw.sin(), 0.0, yaw.cos()) * ORBIT + Vec3::Y * RISE
+    FOCUS + Vec3::new(yaw.sin(), 0.0, yaw.cos()) * orbit + Vec3::Y * RISE
   )
   .looking_at(FOCUS, Vec3::Y);
 

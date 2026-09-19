@@ -135,6 +135,14 @@ pub fn droplet(color: Color) -> impl Bundle {
   )])
 }
 
+pub fn frost(color: Color) -> impl Bundle {
+  glyph(children![
+    turned(fill(8.7, 1.0, 2.6, 18.0, 1.3, color), 0.0),
+    turned(fill(8.7, 1.0, 2.6, 18.0, 1.3, color), 60.0),
+    turned(fill(8.7, 1.0, 2.6, 18.0, 1.3, color), -60.0),
+  ])
+}
+
 pub fn radiation(color: Color) -> impl Bundle {
   glyph(children![
     turned(fill(8.6, 1.5, 2.8, 8.0, 1.4, color), 0.0),

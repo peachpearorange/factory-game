@@ -18,8 +18,25 @@ pub struct PlacedMachine {
 #[derive(Component)]
 struct Ghost;
 
+fn covered(cell: IVec2, kind: MachineKind, turns: u8) -> impl Iterator<Item = IVec2> {
+  let span = kind.span(turns);
+  (0..span.x).flat_map(move |along| {
+    (0..span.y).map(move |across| cell + IVec2::new(along, across))
+  })
+}
+
 #[derive(Resource, Default)]
 pub struct BuildGrid(HashMap<IVec2, Entity>);
+
+impl BuildGrid {
+  fn free(&self, cell: IVec2, kind: MachineKind, turns: u8) -> bool {
+    covered(cell, kind, turns).all(|cell| {
+      cell.x.abs() <= GRID_HALF
+        && cell.y.abs() <= GRID_HALF
+        && !self.0.contains_key(&cell)
+    })
+  }
+}
 
 #[derive(Resource, Default, PartialEq, Eq)]
 pub enum BuildMode {
@@ -90,8 +107,9 @@ pub fn machine_root(
     .filter(|&root| machines.contains(root))
 }
 
-fn cell_transform(cell: IVec2, turns: u8) -> Transform {
-  Transform::from_xyz(cell.x as f32 * CELL, 0.0, cell.y as f32 * CELL)
+fn cell_transform(cell: IVec2, kind: MachineKind, turns: u8) -> Transform {
+  let center = (cell.as_vec2() + (kind.span(turns).as_vec2() - Vec2::ONE) / 2.0) * CELL;
+  Transform::from_xyz(center.x, 0.0, center.y)
     .with_rotation(Quat::from_rotation_y(turns as f32 * -FRAC_PI_2))
 }
 
@@ -133,7 +151,7 @@ fn update_ghost(
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(cell) = aimed_cell(ray)
   {
-    let blocked = grid.0.contains_key(&cell);
+    let blocked = !grid.free(cell, kind, turns);
     let ghost = commands
       .spawn((
         Ghost,
@@ -143,11 +161,11 @@ fn update_ghost(
             .then(|| assets.ghost_blocked.clone())
             .unwrap_or_else(|| assets.ghost_valid.clone())
         ),
-        cell_transform(cell, turns)
+        cell_transform(cell, kind, turns)
       ))
       .id();
     if kind.carries_belt() {
-      spawn_ghost_arrows(&mut commands, &assets, ghost);
+      spawn_ghost_arrows(&mut commands, &assets, kind, ghost);
     }
   }
 }
@@ -172,12 +190,14 @@ fn place_machine(
     && mouse.pressed(MouseButton::Left)
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(cell) = aimed_cell(ray)
-    && !grid.0.contains_key(&cell)
+    && grid.free(cell, kind, turns)
     && inventory.take(kind)
   {
-    let machine = place(&mut commands, &assets, kind, cell_transform(cell, turns));
+    let machine = place(&mut commands, &assets, kind, cell_transform(cell, kind, turns));
     commands.entity(machine).insert(PlacedMachine { kind, cell, turns });
-    grid.0.insert(cell, machine);
+    for cell in covered(cell, kind, turns) {
+      grid.0.insert(cell, machine);
+    }
     if inventory.count(kind) == 0 {
       *mode = BuildMode::Idle;
     }
@@ -210,7 +230,9 @@ fn take_machine(
     && let Ok(&PlacedMachine { kind, cell, turns }) = machines.get(root)
   {
     inventory.add(kind);
-    grid.0.remove(&cell);
+    for cell in covered(cell, kind, turns) {
+      grid.0.remove(&cell);
+    }
     commands.entity(root).despawn();
     if grabbing {
       *mode = BuildMode::Placing { kind, turns };
