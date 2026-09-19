@@ -267,7 +267,10 @@ fn cycle_day(
   field: Res<StarField>,
   sun: Single<(&mut Transform, &mut DirectionalLight), With<Sun>>,
   disc: Single<(&mut Transform, &mut Visibility), (With<SunDisc>, Without<Sun>)>,
-  dome: Single<&mut Transform, (With<SkyDome>, Without<Sun>, Without<SunDisc>)>,
+  dome: Single<
+    (&mut Transform, &mut Visibility),
+    (With<SkyDome>, Without<Sun>, Without<SunDisc>)
+  >,
   mut materials: ResMut<Assets<StandardMaterial>>,
   mut daylight: ResMut<Daylight>,
   mut ambient: ResMut<GlobalAmbientLight>,
@@ -287,7 +290,10 @@ fn cycle_day(
   disc_transform.translation = toward_sun * SKY_RADIUS;
   *disc_visibility =
     (elevation > -0.12).then_some(Visibility::Inherited).unwrap_or(Visibility::Hidden);
-  dome.into_inner().rotation = Quat::from_rotation_x(-angle);
+  let (mut dome_transform, mut dome_visibility) = dome.into_inner();
+  dome_transform.rotation = Quat::from_rotation_x(-angle);
+  *dome_visibility =
+    (night > 0.0).then_some(Visibility::Inherited).unwrap_or(Visibility::Hidden);
 
   if let Some(mut stars) = materials.get_mut(&field.0) {
     stars.base_color = stars.base_color.with_alpha(night);

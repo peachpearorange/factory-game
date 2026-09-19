@@ -968,6 +968,21 @@ impl MachineAssets {
   }
 }
 
+#[derive(Component)]
+struct PreviewCamera;
+
+fn freeze_previews(
+  mut cameras: Query<&mut Camera, With<PreviewCamera>>,
+  mut frames: Local<u32>
+) {
+  *frames += 1;
+  if *frames == 30 {
+    for mut camera in &mut cameras {
+      camera.is_active = false;
+    }
+  }
+}
+
 #[derive(Resource)]
 pub struct MachinePreviews([Handle<Image>; MachineKind::COUNT]);
 
@@ -1032,6 +1047,7 @@ fn load_machine_assets(
       layer.clone()
     ));
     commands.spawn((
+      PreviewCamera,
       Camera3d::default(),
       Camera {
         order: -1 - kind.index() as isize,
@@ -1418,5 +1434,8 @@ pub fn place(
 }
 
 pub fn plugin(app: &mut App) {
-  app.add_plugins(HanabiPlugin).add_systems(PreStartup, load_machine_assets);
+  app
+    .add_plugins(HanabiPlugin)
+    .add_systems(PreStartup, load_machine_assets)
+    .add_systems(Update, freeze_previews);
 }
