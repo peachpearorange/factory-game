@@ -145,7 +145,7 @@ fn burn_ores(
     {
       money.0 += ore.value;
       sold.write(OreSold { at: transform.translation(), value: ore.value });
-      commands.entity(entity).despawn();
+      commands.entity(entity).try_despawn();
     }
   }
 }
@@ -156,7 +156,7 @@ fn cull_fallen_ores(
 ) {
   for (entity, transform) in &ores {
     if transform.translation.y < -30.0 {
-      commands.entity(entity).despawn();
+      commands.entity(entity).try_despawn();
     }
   }
 }

@@ -5,9 +5,11 @@ use {crate::{construction::{BuildMode, PlacedMachine, aim_ray, aimed_entity,
              ore::{Effects, Ore, OreLimit},
              player::{MainCamera, Player, UiHover},
              store::HoverInfo,
-             style::{self, Bold, heavy, label}},
+             style::{self, Bold, heavy, label, tinted}},
      avian3d::prelude::*,
-     bevy::{ecs::entity::EntityHashSet, prelude::*}};
+     bevy::{diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+            ecs::entity::EntityHashSet,
+            prelude::*}};
 
 const METER_WIDTH: f32 = 208.0;
 const TAG_RANGE: f32 = 30.0;
@@ -23,6 +25,9 @@ struct OreMeterLabel;
 
 #[derive(Component)]
 struct MoneyLabel;
+
+#[derive(Component)]
+struct FpsLabel;
 
 #[derive(Component)]
 struct Tooltip;
@@ -113,6 +118,7 @@ fn spawn_hud(mut commands: Commands) {
           (label("Ore  0 / 0", style::SMALL), OreMeterLabel),
         ],
       ),
+      (tinted("-- fps", style::TINY, style::TEXT_DIM), FpsLabel),
       label(
         "Right-drag to look    Click a machine to move it    Q to delete",
         style::TINY
@@ -171,6 +177,17 @@ fn update_hud(
     .then(|| format!("Ore  {live} / {}  — at capacity", limit.0))
     .unwrap_or_else(|| format!("Ore  {live} / {}", limit.0));
   ***cash = format!("${:.0}", money.0);
+}
+
+fn update_fps(
+  diagnostics: Res<DiagnosticsStore>,
+  mut text: Single<&mut Text, With<FpsLabel>>
+) {
+  ***text = diagnostics
+    .get(&FrameTimeDiagnosticsPlugin::FPS)
+    .and_then(|fps| fps.smoothed())
+    .map(|fps| format!("{fps:.0} fps"))
+    .unwrap_or_else(|| "-- fps".to_string());
 }
 
 fn show_mode_hint(
@@ -388,16 +405,20 @@ fn animate_sold_tags(
 }
 
 pub fn plugin(app: &mut App) {
-  app.add_systems(Startup, spawn_hud).add_systems(
-    Update,
-    (
-      update_hud,
-      show_mode_hint,
-      update_hint,
-      update_tooltip,
-      track_value_tags,
-      pop_sold_ores,
-      animate_sold_tags
-    )
-  );
+  app
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
+    .add_systems(Startup, spawn_hud)
+    .add_systems(
+      Update,
+      (
+        update_hud,
+        update_fps,
+        show_mode_hint,
+        update_hint,
+        update_tooltip,
+        track_value_tags,
+        pop_sold_ores,
+        animate_sold_tags
+      )
+    );
 }

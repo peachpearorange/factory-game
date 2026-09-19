@@ -1032,12 +1032,6 @@ fn load_machine_assets(
       layer.clone()
     ));
     commands.spawn((
-      DirectionalLight { illuminance: 6000.0, ..default() },
-      Transform::from_translation(stage + Vec3::new(4.0, 6.0, 5.0))
-        .looking_at(focus, Vec3::Y),
-      layer.clone()
-    ));
-    commands.spawn((
       Camera3d::default(),
       Camera {
         order: -1 - kind.index() as isize,
@@ -1057,6 +1051,12 @@ fn load_machine_assets(
     image
   });
 
+  commands.spawn((
+    DirectionalLight { illuminance: 6000.0, ..default() },
+    Transform::from_translation(Vec3::new(4.0, 6.0, 5.0))
+      .looking_at(Vec3::Y * 1.5, Vec3::Y),
+    RenderLayers::from_layers(&MachineKind::ALL.map(|kind| kind.index() + 1))
+  ));
   commands.insert_resource(MachinePreviews(previews));
   commands.insert_resource(MachineAssets {
     meshes: machine_meshes,

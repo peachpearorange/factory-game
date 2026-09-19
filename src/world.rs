@@ -156,7 +156,9 @@ fn spawn_sky(
     ..default()
   });
 
-  let dome = commands.spawn((Name::new("Sky Dome"), SkyDome, Transform::default())).id();
+  let dome = commands
+    .spawn((Name::new("Sky Dome"), SkyDome, Transform::default(), Visibility::default()))
+    .id();
   for index in 0..STAR_COUNT {
     let (position, size) = star_at(index);
     commands.spawn((

@@ -191,17 +191,19 @@ fn fade_dropped_ores(
         material.base_color = material.base_color.with_alpha(left);
       }
       if fading.0.is_finished() {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
       }
     } else if floored {
       let solid = assets.material(ore.form, ore.effects);
       let mut dissolving = materials.get(&solid).cloned().unwrap_or_default();
       dissolving.alpha_mode = AlphaMode::Blend;
       painted.0 = materials.add(dissolving);
-      commands.entity(entity).insert(Fading(Timer::from_seconds(FADE, TimerMode::Once)));
+      commands
+        .entity(entity)
+        .try_insert(Fading(Timer::from_seconds(FADE, TimerMode::Once)));
     } else if recovered {
       painted.0 = assets.material(ore.form, ore.effects);
-      commands.entity(entity).remove::<Fading>();
+      commands.entity(entity).try_remove::<Fading>();
     }
   }
 }

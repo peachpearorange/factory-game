@@ -287,7 +287,7 @@ fn spawn_toolbar(mut commands: Commands) {
           icon::cross(style::DELETE),
           "Delete mode",
           "CLEAR",
-          "X",
+          "Q",
           style::DELETE,
         ),
       ),
