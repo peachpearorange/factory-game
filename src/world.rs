@@ -34,6 +34,28 @@ struct SunDisc;
 #[derive(Component)]
 struct SkyDome;
 
+#[derive(Component)]
+struct Ocean;
+
+const DRIFT: Vec2 = Vec2::new(0.031, 0.017);
+const DEEP: Color = Color::srgb(0.008, 0.032, 0.075);
+const SHALLOW: Color = Color::srgb(0.06, 0.30, 0.42);
+
+fn stir_ocean(
+  time: Res<Time>,
+  daylight: Res<Daylight>,
+  ocean: Single<&MeshMaterial3d<StandardMaterial>, With<Ocean>>,
+  mut materials: ResMut<Assets<StandardMaterial>>
+) {
+  if let Some(mut water) = materials.get_mut(&ocean.0) {
+    let day = daylight.0.sqrt();
+    water.uv_transform.translation = DRIFT * time.elapsed_secs();
+    water.base_color = DEEP.mix(&SHALLOW, day);
+    water.reflectance = 0.30 + 0.55 * day;
+    water.perceptual_roughness = 0.34 - 0.20 * day;
+  }
+}
+
 #[derive(Resource)]
 struct StarField(Handle<StandardMaterial>);
 
@@ -209,17 +231,28 @@ fn spawn_world(
     Transform::from_xyz(0.0, ISLAND_TOP, 0.0)
   ));
 
+  let ocean = materials.add(StandardMaterial {
+    base_color: DEEP,
+    normal_map_texture: Some(images.add(texture::swell())),
+    uv_transform: Affine2::from_scale(Vec2::splat(SKY_RADIUS * 2.0) / texture::SWELL),
+    perceptual_roughness: 0.14,
+    reflectance: 0.80,
+    ..default()
+  });
   commands.spawn((
     Name::new("Ocean"),
+    Ocean,
     Mesh3d(
-      meshes.add(Plane3d::default().mesh().size(SKY_RADIUS * 2.0, SKY_RADIUS * 2.0))
+      meshes.add(
+        Plane3d::default()
+          .mesh()
+          .size(SKY_RADIUS * 2.0, SKY_RADIUS * 2.0)
+          .build()
+          .with_generated_tangents()
+          .expect("ocean tangents")
+      )
     ),
-    MeshMaterial3d(materials.add(StandardMaterial {
-      base_color: Color::srgb(0.05, 0.19, 0.29),
-      perceptual_roughness: 0.08,
-      reflectance: 0.7,
-      ..default()
-    })),
+    MeshMaterial3d(ocean),
     NotShadowCaster,
     Transform::from_xyz(0.0, SEA_LEVEL, 0.0)
   ));
@@ -310,5 +343,5 @@ pub fn plugin(app: &mut App) {
     .init_resource::<DayClock>()
     .init_resource::<Daylight>()
     .add_systems(Startup, (spawn_world, spawn_sky))
-    .add_systems(Update, cycle_day);
+    .add_systems(Update, (cycle_day, stir_ocean).chain());
 }

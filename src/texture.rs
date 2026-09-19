@@ -32,7 +32,7 @@ fn noise(u: f32, v: f32, across: i32, along: i32) -> f32 {
   )
 }
 
-fn tiling(pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
+fn tiling_as(format: TextureFormat, pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
   let data = (0..SIZE * SIZE)
     .flat_map(|index| {
       pixels((index % SIZE) as f32 / SIZE as f32, (index / SIZE) as f32 / SIZE as f32)
@@ -42,7 +42,7 @@ fn tiling(pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
     Extent3d { width: SIZE, height: SIZE, depth_or_array_layers: 1 },
     TextureDimension::D2,
     data,
-    TextureFormat::Rgba8UnormSrgb,
+    format,
     RenderAssetUsages::RENDER_WORLD
   );
   image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
@@ -51,6 +51,10 @@ fn tiling(pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
     ..ImageSamplerDescriptor::linear()
   });
   image
+}
+
+fn tiling(pixels: impl Fn(f32, f32) -> [u8; 4]) -> Image {
+  tiling_as(TextureFormat::Rgba8UnormSrgb, pixels)
 }
 
 pub fn concrete() -> Image {
@@ -77,6 +81,31 @@ pub fn planks() -> Image {
     let shade = (0.86 + 0.09 * fibre + 0.05 * board) * (0.76 + 0.24 * seam(v));
     let level = (shade.clamp(0.0, 1.0) * 255.0) as u8;
     [level, level, (level as f32 * 0.98) as u8, 255]
+  })
+}
+
+pub const SWELL: Vec2 = Vec2::new(16.0, 16.0);
+const CRESTS: [(f32, f32, f32); 3] =
+  [(1.0, 0.0, 1.0), (0.0, 1.0, 0.62), (2.0, 3.0, 0.20)];
+const CHOP: [(i32, f32); 2] = [(22, 0.42), (61, 0.22)];
+const SWELL_TILT: f32 = 0.028;
+
+pub fn swell() -> Image {
+  let step = 1.0 / SIZE as f32;
+  tiling_as(TextureFormat::Rgba8Unorm, move |u, v| {
+    let rolling = CRESTS.into_iter().fold(Vec2::ZERO, |slope, (fu, fv, amplitude)| {
+      let wave = (TAU * (fu * u + fv * v)).cos() * amplitude * TAU;
+      slope + Vec2::new(fu * wave, fv * wave)
+    });
+    let chop = CHOP.into_iter().fold(Vec2::ZERO, |slope, (grid, amplitude)| {
+      let lean = |du: f32, dv: f32| {
+        noise(u + du, v + dv, grid, grid) - noise(u - du, v - dv, grid, grid)
+      };
+      slope + Vec2::new(lean(step, 0.0), lean(0.0, step)) * amplitude / (2.0 * step)
+    });
+    let normal = (-(rolling + chop) * SWELL_TILT).extend(1.0).normalize();
+    let level = |axis: f32| ((0.5 + 0.5 * axis) * 255.0) as u8;
+    [level(normal.x), level(normal.y), level(normal.z), 255]
   })
 }
 
