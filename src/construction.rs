@@ -111,8 +111,6 @@ fn steer_build(keys: Res<ButtonInput<KeyCode>>, mut mode: ResMut<BuildMode>) {
     && keys.just_pressed(KeyCode::KeyR)
   {
     *mode = BuildMode::Placing { kind, turns: (turns + 1) % 4 };
-  } else if *mode != BuildMode::Idle && keys.just_pressed(KeyCode::KeyQ) {
-    *mode = BuildMode::Idle;
   }
 }
 

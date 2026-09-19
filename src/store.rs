@@ -307,12 +307,12 @@ fn toggle_delete_mode(
   toggle: Query<&Interaction, (With<DeleteToggle>, Changed<Interaction>)>,
   mut mode: ResMut<BuildMode>
 ) {
-  if keys.just_pressed(KeyCode::KeyX)
+  if keys.just_pressed(KeyCode::KeyQ)
     || toggle.iter().any(|state| *state == Interaction::Pressed)
   {
-    *mode = (*mode == BuildMode::Deleting)
-      .then_some(BuildMode::Idle)
-      .unwrap_or(BuildMode::Deleting);
+    *mode = (*mode == BuildMode::Idle)
+      .then_some(BuildMode::Deleting)
+      .unwrap_or(BuildMode::Idle);
   }
 }
 

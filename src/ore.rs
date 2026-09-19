@@ -1,4 +1,9 @@
-use {crate::sdf, avian3d::prelude::*, bevy::prelude::*};
+use {crate::{sdf, world::GROUND},
+     avian3d::prelude::*,
+     bevy::prelude::*};
+
+const SETTLED: f32 = 0.42;
+const FADE: f32 = 2.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Effects(u8);
@@ -124,6 +129,49 @@ fn load_ore_assets(
   commands.insert_resource(OreAssets { mesh: meshes.add(mesh), collider, materials });
 }
 
+#[derive(Component)]
+struct Fading(Timer);
+
+fn fade_dropped_ores(
+  time: Res<Time>,
+  assets: Res<OreAssets>,
+  mut materials: ResMut<Assets<StandardMaterial>>,
+  mut ores: Query<(
+    Entity,
+    &Ore,
+    &Transform,
+    &mut MeshMaterial3d<StandardMaterial>,
+    Option<&mut Fading>
+  )>,
+  mut commands: Commands
+) {
+  for (entity, ore, transform, mut painted, fading) in &mut ores {
+    let floored = transform.translation.y < GROUND + SETTLED;
+    let recovered = !floored && fading.is_some();
+    if floored && let Some(mut fading) = fading {
+      let left = 1.0 - fading.0.tick(time.delta()).fraction();
+      if let Some(mut material) = materials.get_mut(&painted.0) {
+        material.base_color = material.base_color.with_alpha(left);
+      }
+      if fading.0.is_finished() {
+        commands.entity(entity).despawn();
+      }
+    } else if floored {
+      let solid = assets.material(ore.effects);
+      let mut dissolving = materials.get(&solid).cloned().unwrap_or_default();
+      dissolving.alpha_mode = AlphaMode::Blend;
+      painted.0 = materials.add(dissolving);
+      commands.entity(entity).insert(Fading(Timer::from_seconds(FADE, TimerMode::Once)));
+    } else if recovered {
+      painted.0 = assets.material(ore.effects);
+      commands.entity(entity).remove::<Fading>();
+    }
+  }
+}
+
 pub fn plugin(app: &mut App) {
-  app.init_resource::<OreLimit>().add_systems(PreStartup, load_ore_assets);
+  app
+    .init_resource::<OreLimit>()
+    .add_systems(PreStartup, load_ore_assets)
+    .add_systems(Update, fade_dropped_ores);
 }

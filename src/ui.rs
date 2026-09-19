@@ -114,7 +114,7 @@ fn spawn_hud(mut commands: Commands) {
         ],
       ),
       label(
-        "Right-drag to look    Click a machine to move it    X to delete",
+        "Right-drag to look    Click a machine to move it    Q to delete",
         style::TINY
       ),
     ]
@@ -181,7 +181,7 @@ fn show_mode_hint(
   let message = match *mode {
     BuildMode::Idle => None,
     BuildMode::Placing { .. } => Some("R to rotate     Q to cancel"),
-    BuildMode::Deleting => Some("Click a machine to store it     X or Q to stop")
+    BuildMode::Deleting => Some("Click a machine to store it     Q to stop")
   };
   hint.display = message.map(|_| Display::Flex).unwrap_or(Display::None);
   if let Some(line) = message {

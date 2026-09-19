@@ -91,7 +91,7 @@ fn spawn_menu(mut commands: Commands) {
                         ..default()
                     },
                     tinted(
-                        "WASD move    Space jump    Right-drag look\nE items    F store    Click a machine to move it    X deletes\nR rotates    Q cancels    F2 screenshot",
+                        "WASD move    Space jump    Right-drag look\nE items    F store    Click a machine to move it\nQ delete mode    R rotates    F2 screenshot",
                         11.0,
                         style::TEXT_DIM,
                     ),
