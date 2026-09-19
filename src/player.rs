@@ -12,8 +12,7 @@ use {crate::{machine::ConveyorBelt,
             window::{CursorGrabMode, CursorOptions}},
      std::{f32::consts::PI, ops::Range}};
 
-const GRAVITY: f32 = -26.0;
-const JUMP_SPEED: f32 = 9.5;
+const JUMP_HEIGHT: f32 = 1.74;
 const GROUND_PROBE: f32 = 0.18;
 const WALK_SPEED: f32 = 7.5;
 const TURN_RATE: f32 = 12.0;
@@ -68,7 +67,7 @@ struct CameraRig {
   height: f32,
   yaw_speed: f32,
   pitch_speed: f32,
-  zoom_speed: f32,
+  zoom_step: f32,
   zoom_range: Range<f32>,
   pitch_range: Range<f32>
 }
@@ -80,7 +79,7 @@ impl Default for CameraRig {
       height: 1.9,
       yaw_speed: 0.0047,
       pitch_speed: 0.0037,
-      zoom_speed: 2.8,
+      zoom_step: 1.22,
       zoom_range: 3.5..34.0,
       pitch_range: -1.55..0.62
     }
@@ -230,6 +229,7 @@ fn sync_cursor(
 fn move_player(
   time: Res<Time>,
   keys: Res<ButtonInput<KeyCode>>,
+  gravity: Res<Gravity>,
   belts: Query<(&ConveyorBelt, &GlobalTransform)>,
   camera: Single<&Transform, (With<MainCamera>, Without<Player>)>,
   player: Single<
@@ -270,22 +270,24 @@ fn move_player(
     })
     .unwrap_or(Vec3::ZERO);
 
-  let fall = velocity.y + GRAVITY * time.delta_secs();
+  let pull = gravity.0.y * time.delta_secs();
+  let fall = velocity.y + pull;
+  let drive = grounded.then(|| wish + carry).unwrap_or(velocity.0.with_y(0.0));
   velocity.0 = Vec3::new(
-    wish.x + carry.x,
+    drive.x,
     if grounded && keys.just_pressed(KeyCode::Space) {
-      JUMP_SPEED
+      (-2.0 * gravity.0.y * JUMP_HEIGHT).sqrt()
     } else if grounded {
-      fall.max(GRAVITY * time.delta_secs())
+      fall.max(pull)
     } else {
       fall
     },
-    wish.z + carry.z
+    drive.z
   );
   let flying = (!grounded && velocity.y.abs() > 0.5).then_some(1.0).unwrap_or(0.0);
   gait.lift = gait.lift.lerp(flying, 1.0 - (-LIFT_EASE * time.delta_secs()).exp());
 
-  if wish.length_squared() > 0.0 {
+  if grounded && wish.length_squared() > 0.0 {
     let facing = Quat::from_rotation_y(wish.x.atan2(wish.z));
     transform.rotation =
       transform.rotation.slerp(facing, 1.0 - (-TURN_RATE * time.delta_secs()).exp());
@@ -351,7 +353,7 @@ fn follow_player(
 ) {
   let reach = distance.get_or_insert(rig.distance);
   if !hovering.0 {
-    *reach = (*reach - scroll.delta.y * rig.zoom_speed)
+    *reach = (*reach * rig.zoom_step.powf(-scroll.delta.y))
       .clamp(rig.zoom_range.start, rig.zoom_range.end);
   }
 
