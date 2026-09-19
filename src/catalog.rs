@@ -175,8 +175,8 @@ impl MachineKind {
       Self::Coop => MachineSpec {
         name: "Chicken Coop",
         blurb: "A hen broods in the nest box and rolls a fresh egg down the ramp.",
-        price: 340.0,
-        tier: Tier::Sturdy,
+        price: 110.0,
+        tier: Tier::Plain,
         unlock: None
       },
       Self::Forge => MachineSpec {
@@ -1197,7 +1197,7 @@ pub fn place(
       ));
       commands.entity(root).insert(Dropper {
         timer: Timer::from_seconds(1.1, TimerMode::Repeating),
-        value: 34.0,
+        value: 6.0,
         form: OreForm::Egg
       });
     }
