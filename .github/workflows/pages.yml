@@ -41,9 +41,11 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: wasm-bindgen-cli@${{ steps.bindgen.outputs.version }}
+          tool: wasm-bindgen-cli@${{ steps.bindgen.outputs.version }}, wasm-opt
 
       - name: Build for the web
+        env:
+          RUSTFLAGS: -C strip=debuginfo
         run: cargo build --release --locked --target wasm32-unknown-unknown --features bevy/webgpu
 
       - name: Bundle
@@ -51,8 +53,11 @@ jobs:
           wasm-bindgen --no-typescript --target web \
             --out-dir dist --out-name factory_game \
             target/wasm32-unknown-unknown/release/factory_game.wasm
+          wasm-opt -Os --strip-debug --strip-producers \
+            -o dist/factory_game_bg.wasm dist/factory_game_bg.wasm
           cp web/index.html dist/
           cp -r assets dist/assets
+          ls -lh dist/factory_game_bg.wasm
 
       - uses: actions/upload-pages-artifact@v3
         with:
