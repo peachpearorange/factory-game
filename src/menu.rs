@@ -121,15 +121,20 @@ fn auto_shoot(
   }
 }
 
+pub fn capture(commands: &mut Commands, name: &str) {
+  let path = format!("{SHOT_DIR}/{name}.png");
+  if let Some(folder) = std::path::Path::new(&path).parent() {
+    fs::create_dir_all(folder).ok();
+  }
+  commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
+}
+
 fn shoot(commands: &mut Commands) {
-  fs::create_dir_all(SHOT_DIR).ok();
   let stamp = SystemTime::now()
     .duration_since(UNIX_EPOCH)
     .map(|since| since.as_millis())
     .unwrap_or_default();
-  commands
-    .spawn(Screenshot::primary_window())
-    .observe(save_to_disk(format!("{SHOT_DIR}/factory-{stamp}.png")));
+  capture(commands, &format!("factory-{stamp}"));
 }
 
 fn steer_menu(

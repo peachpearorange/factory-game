@@ -6,6 +6,7 @@ mod menu;
 mod ore;
 mod player;
 mod sdf;
+mod showcase;
 mod store;
 mod style;
 mod texture;
@@ -41,7 +42,8 @@ fn main() {
       player::plugin,
       store::plugin,
       ui::plugin,
-      menu::plugin
+      menu::plugin,
+      showcase::plugin
     ))
     .run();
 }

@@ -1,0 +1,8 @@
+#!/bin/sh
+# tools/showcase <machine name fragment>
+# Places the machine (flanked by conveyors if it carries a belt), orbits it
+# through four angles at dawn, noon and night, and writes the twelve shots to
+# screenshots/showcase/ before exiting.
+set -e
+test -n "$1" || { echo "usage: tools/showcase <machine name fragment>" >&2; exit 2; }
+exec env FACTORY_SHOWCASE="$1" cargo run --quiet

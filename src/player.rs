@@ -442,7 +442,10 @@ pub fn plugin(app: &mut App) {
     .add_systems(Startup, spawn_player)
     .add_systems(
       Update,
-      (sync_cursor, move_player, follow_player, fade_occluders).chain().run_if(playing)
+      (sync_cursor, move_player, follow_player, fade_occluders)
+        .chain()
+        .run_if(playing)
+        .run_if(crate::showcase::idle)
     )
     .add_systems(Update, (animate_body, sweep_flashlight));
 }

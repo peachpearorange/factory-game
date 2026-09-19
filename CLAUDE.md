@@ -24,3 +24,5 @@ Env vars, all inert when unset:
 
 So `FACTORY_DAY=24 FACTORY_TIME=6 FACTORY_SHOT=2 cargo run` gives a noon screenshot straight away, and `FACTORY_TIME=17` gives a night one without waiting through the day.
 
+`tools/showcase <machine name fragment>` is the way to look at a machine. It places it at the origin, flanked by conveyors if it carries a belt, hides the HUD, freezes the player camera, and orbits 35/125/215/305 degrees at dawn, noon and night, writing twelve shots to `screenshots/showcase/<machine>-<moment>-<angle>deg.png` before exiting. `FACTORY_SHOWCASE=<fragment>` alone does the same without the script. The fragment matches the spec name ignoring case and punctuation, so `orewash` finds The Orewash.
+

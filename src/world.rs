@@ -38,13 +38,17 @@ struct SkyDome;
 struct StarField(Handle<StandardMaterial>);
 
 #[derive(Resource)]
-struct DayClock {
+pub struct DayClock {
   length: f32,
   start: f32
 }
 
 impl DayClock {
   fn angle(&self, elapsed: f32) -> f32 { (self.start + elapsed) / self.length * TAU }
+
+  pub fn pin(&mut self, phase: f32, elapsed: f32) {
+    self.start = phase * self.length - elapsed;
+  }
 }
 
 impl Default for DayClock {
