@@ -19,8 +19,14 @@ use {crate::{block::{self, Block},
 pub const CELL: f32 = 2.0;
 pub const BELT_TOP: f32 = 0.22;
 const ARROWS_PER_BELT: usize = 3;
-const FURNACE_FOOT: f32 = 0.34;
-const FURNACE_MOUTH: f32 = FURNACE_FOOT + 0.52;
+const HEARTH_HALF: f32 = 0.94;
+const HEARTH_WALL: f32 = 0.11;
+const HEARTH_PAN: f32 = 0.14;
+const HEARTH_LIP: f32 = 0.16;
+const HEARTH_RIM: f32 = 0.70;
+const HEARTH_BACK: f32 = 1.30;
+const HEARTH_COALS: f32 = HEARTH_PAN + 0.06;
+const FURNACE_STACK: f32 = 1.86;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const DROPPER_BACK: f32 = -0.42;
 const CHUTE_FLOOR: f32 = 1.16;
@@ -265,6 +271,13 @@ impl MachineKind {
     }
   }
 
+  const fn preview_spin(self) -> f32 {
+    match self {
+      Self::Furnace => 2.3,
+      _ => -0.6
+    }
+  }
+
   const fn surface(self) -> Surface {
     match self {
       Self::Orewash => Surface::Plastic,
@@ -290,7 +303,7 @@ impl MachineKind {
       Self::Dropper | Self::Coop => (Color::WHITE, LinearRgba::BLACK),
       Self::Forge => (Color::srgb(0.44, 0.24, 0.18), LinearRgba::rgb(0.85, 0.22, 0.03)),
       Self::FlameJet => (Color::srgb(0.46, 0.47, 0.50), LinearRgba::BLACK),
-      Self::Furnace => (Color::srgb(0.30, 0.17, 0.13), LinearRgba::BLACK),
+      Self::Furnace => (Color::WHITE, LinearRgba::BLACK),
       Self::MistCoil => {
         (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
       }
@@ -532,61 +545,82 @@ fn hen_paint(at: Vec3, _: Vec3) -> LinearRgba {
 }
 
 fn coop_mesh() -> Mesh {
-  block::assembled(
-    coop_blocks(),
+  block::merged(
     block::smooth(sdf::bake_painted(
       hen(),
       sdf::Bounds::around(Vec3::new(0.70, CHUTE_FLOOR + 0.42, 0.0), 0.62, 7),
       hen_paint
-    ))
+    )),
+    block::assembled(coop_blocks())
   )
 }
 
-fn oven_shell() -> Tree {
-  let mouth = sdf::union([
-    sdf::at(sdf::along_x(sdf::cylinder(0.40, 1.4)), Vec3::new(0.0, FURNACE_MOUTH, 0.0)),
-    sdf::at(
-      sdf::cuboid(Vec3::new(1.4, FURNACE_MOUTH / 2.0, 0.40)),
-      Vec3::new(0.0, FURNACE_MOUTH / 2.0, 0.0)
+const IRON: LinearRgba = LinearRgba::rgb(0.30, 0.31, 0.34);
+const SOOT: LinearRgba = LinearRgba::rgb(0.11, 0.11, 0.12);
+const BRASS: LinearRgba = LinearRgba::rgb(0.74, 0.55, 0.20);
+const COALS: LinearRgba = LinearRgba::rgb(1.0, 0.42, 0.07);
+
+fn hearth_blocks() -> impl Iterator<Item = Block> {
+  let side = |across: f32| {
+    Block::new(
+      Vec3::new(HEARTH_HALF, (HEARTH_RIM - HEARTH_PAN) / 2.0, HEARTH_WALL),
+      Vec3::new(
+        0.0,
+        (HEARTH_RIM + HEARTH_PAN) / 2.0,
+        across * (HEARTH_HALF - HEARTH_WALL)
+      ),
+      IRON
     )
-  ]);
-  let legs = (0..4).map(|corner| {
-    let (side, back) = ((corner % 2) as f32 * 2.0 - 1.0, (corner / 2) as f32 * 2.0 - 1.0);
-    sdf::at(
-      sdf::rounded_box(Vec3::new(0.09, FURNACE_FOOT / 2.0, 0.09), 0.04),
-      Vec3::new(0.30 + side * 0.34, FURNACE_FOOT / 2.0, back * 0.62)
+  };
+  let capping = |across: f32| {
+    Block::new(
+      Vec3::new(HEARTH_HALF, 0.04, HEARTH_WALL + 0.02),
+      Vec3::new(0.0, HEARTH_RIM + 0.04, across * (HEARTH_HALF - HEARTH_WALL)),
+      BRASS
     )
-  });
-  sdf::union(
-    [
-      sdf::difference(
-        sdf::at(
-          sdf::rounded_box(Vec3::new(0.72, 0.62, 0.80), 0.10),
-          Vec3::new(0.32, FURNACE_FOOT + 0.62, 0.0)
-        ),
-        mouth
-      ),
-      sdf::at(
-        sdf::rounded_box(Vec3::new(0.86, 0.07, 0.92), 0.05),
-        Vec3::new(0.32, FURNACE_FOOT + 1.28, 0.0)
-      ),
-      sdf::at(
-        sdf::rounded_box(Vec3::new(0.46, 0.06, 0.52), 0.04),
-        Vec3::new(0.32, FURNACE_FOOT + 1.44, 0.0)
-      ),
-      sdf::at(sdf::cylinder(0.17, 0.50), Vec3::new(0.32, FURNACE_FOOT + 1.92, 0.0)),
-      sdf::at(
-        sdf::rounded_cylinder(0.25, 0.08, 0.05),
-        Vec3::new(0.32, FURNACE_FOOT + 2.40, 0.0)
-      ),
-      sdf::at(
-        sdf::rounded_box(Vec3::new(0.05, 0.05, 0.62), 0.04),
-        Vec3::new(-0.44, FURNACE_FOOT + 1.10, 0.0)
-      )
-    ]
-    .into_iter()
-    .chain(legs)
-  )
+  };
+  [
+    Block::new(
+      Vec3::new(HEARTH_HALF, HEARTH_PAN / 2.0, HEARTH_HALF),
+      Vec3::new(0.0, HEARTH_PAN / 2.0, 0.0),
+      SOOT
+    ),
+    Block::new(
+      Vec3::new(HEARTH_HALF - HEARTH_WALL, 0.03, HEARTH_HALF - HEARTH_WALL),
+      Vec3::new(0.0, HEARTH_PAN + 0.03, 0.0),
+      COALS
+    ),
+    Block::new(
+      Vec3::new(HEARTH_WALL, (HEARTH_BACK - HEARTH_PAN) / 2.0, HEARTH_HALF),
+      Vec3::new(HEARTH_HALF - HEARTH_WALL, (HEARTH_BACK + HEARTH_PAN) / 2.0, 0.0),
+      IRON
+    ),
+    Block::new(
+      Vec3::new(HEARTH_WALL, 0.04, HEARTH_HALF),
+      Vec3::new(HEARTH_HALF - HEARTH_WALL, HEARTH_BACK + 0.04, 0.0),
+      BRASS
+    ),
+    Block::new(
+      Vec3::new(HEARTH_WALL, HEARTH_LIP / 2.0, HEARTH_HALF),
+      Vec3::new(HEARTH_WALL - HEARTH_HALF, HEARTH_LIP / 2.0, 0.0),
+      BRASS
+    ),
+    Block::new(
+      Vec3::new(0.18, (FURNACE_STACK - HEARTH_BACK) / 2.0, 0.18),
+      Vec3::new(HEARTH_HALF - 0.30, (FURNACE_STACK + HEARTH_BACK) / 2.0, 0.0),
+      IRON
+    ),
+    Block::new(
+      Vec3::new(0.24, 0.06, 0.24),
+      Vec3::new(HEARTH_HALF - 0.30, FURNACE_STACK + 0.06, 0.0),
+      BRASS
+    ),
+    side(1.0),
+    side(-1.0),
+    capping(1.0),
+    capping(-1.0)
+  ]
+  .into_iter()
 }
 
 fn bonfire_pile() -> Tree {
@@ -931,8 +965,8 @@ pub struct MachineAssets {
   flap_material: Handle<StandardMaterial>,
   sheet_mesh: Handle<Mesh>,
   sheet_material: Handle<StandardMaterial>,
-  ember_mesh: Handle<Mesh>,
-  ember_glow: Handle<StandardMaterial>,
+  coals_mesh: Handle<Mesh>,
+  coals_glow: Handle<StandardMaterial>,
   lamp_glow: Handle<StandardMaterial>,
   pub ghost_valid: Handle<StandardMaterial>,
   pub ghost_blocked: Handle<StandardMaterial>
@@ -944,7 +978,12 @@ impl MachineAssets {
   }
 
   fn baked(kind: MachineKind) -> Mesh {
-    (kind == MachineKind::Coop).then(coop_mesh).unwrap_or_else(|| {
+    match kind {
+      MachineKind::Coop => Some(coop_mesh()),
+      MachineKind::Furnace => Some(block::assembled(hearth_blocks())),
+      _ => None
+    }
+    .unwrap_or_else(|| {
       kind
         .paint()
         .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(), paint))
@@ -956,7 +995,6 @@ impl MachineAssets {
     match kind {
       MachineKind::Conveyor => belt_deck(),
       MachineKind::Dropper => dropper_body(),
-      MachineKind::Furnace => oven_shell(),
       MachineKind::FlameJet => jet_nozzle(),
       MachineKind::Orewash => orewash_tunnel(),
       MachineKind::Torch => torch_post(),
@@ -1043,7 +1081,8 @@ fn load_machine_assets(
     commands.spawn((
       Mesh3d(machine_meshes[kind.index()].clone()),
       MeshMaterial3d(machine_materials[kind.index()].clone()),
-      Transform::from_translation(stage).with_rotation(Quat::from_rotation_y(-0.6)),
+      Transform::from_translation(stage)
+        .with_rotation(Quat::from_rotation_y(kind.preview_spin())),
       layer.clone()
     ));
     commands.spawn((
@@ -1129,10 +1168,14 @@ fn load_machine_assets(
       cull_mode: None,
       ..default()
     }),
-    ember_mesh: meshes.add(Sphere::new(1.0).mesh().ico(2).expect("ember mesh")),
-    ember_glow: materials.add(StandardMaterial {
+    coals_mesh: meshes.add(Cuboid::new(
+      (HEARTH_HALF - HEARTH_WALL) * 2.0,
+      0.12,
+      (HEARTH_HALF - HEARTH_WALL) * 2.0
+    )),
+    coals_glow: materials.add(StandardMaterial {
       base_color: EMBER_GLOW,
-      emissive: LinearRgba::rgb(14.0, 3.4, 0.35),
+      emissive: LinearRgba::rgb(3.4, 0.62, 0.06),
       ..default()
     }),
     lamp_glow: materials.add(StandardMaterial {
@@ -1218,25 +1261,51 @@ pub fn place(
       });
     }
     MachineKind::Furnace => {
+      let wall = |along: f32, across: f32, half: Vec3| {
+        (
+          Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0),
+          Transform::from_xyz(
+            along * (HEARTH_HALF - half.x),
+            HEARTH_PAN + half.y,
+            across * (HEARTH_HALF - half.z)
+          )
+        )
+      };
       parts.push((
-        Collider::cuboid(1.5, 2.6, 1.7),
-        Transform::from_xyz(0.57, FURNACE_FOOT + 1.3, 0.0)
+        Collider::cuboid(HEARTH_HALF * 2.0, HEARTH_PAN, HEARTH_HALF * 2.0),
+        Transform::from_xyz(0.0, HEARTH_PAN / 2.0, 0.0)
       ));
+      parts.push(wall(
+        1.0,
+        0.0,
+        Vec3::new(HEARTH_WALL, (HEARTH_BACK - HEARTH_PAN) / 2.0, HEARTH_HALF)
+      ));
+      parts.push(wall(
+        -1.0,
+        0.0,
+        Vec3::new(HEARTH_WALL, (HEARTH_LIP - HEARTH_PAN).max(0.02) / 2.0, HEARTH_HALF)
+      ));
+      for across in [-1.0, 1.0] {
+        parts.push(wall(
+          0.0,
+          across,
+          Vec3::new(HEARTH_HALF, (HEARTH_RIM - HEARTH_PAN) / 2.0, HEARTH_WALL)
+        ));
+      }
       commands.spawn((
         Furnace,
-        Collider::cuboid(CELL * 0.95, FURNACE_MOUTH + 0.44, 1.4),
+        Collider::cuboid(
+          (HEARTH_HALF - HEARTH_WALL) * 2.0,
+          HEARTH_RIM * 2.0,
+          (HEARTH_HALF - HEARTH_WALL) * 2.0
+        ),
         Sensor,
         CollisionEventsEnabled,
-        Transform::from_xyz(-0.05, (FURNACE_MOUTH + 0.44) / 2.0, 0.0),
-        ChildOf(root)
-      ));
-      commands.spawn((
-        Mesh3d(assets.ember_mesh.clone()),
-        MeshMaterial3d(assets.ember_glow.clone()),
+        Mesh3d(assets.coals_mesh.clone()),
+        MeshMaterial3d(assets.coals_glow.clone()),
         NotShadowCaster,
-        PointLight { color: EMBER_GLOW, intensity: 700_000.0, range: 14.0, ..default() },
-        Transform::from_xyz(-0.15, FURNACE_MOUTH, 0.0)
-          .with_scale(Vec3::new(0.52, 0.34, 0.36)),
+        PointLight { color: EMBER_GLOW, intensity: 420_000.0, range: 14.0, ..default() },
+        Transform::from_xyz(0.0, HEARTH_COALS, 0.0),
         ChildOf(root)
       ));
     }

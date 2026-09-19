@@ -53,9 +53,15 @@ pub fn smooth(mut mesh: Mesh) -> Mesh {
   mesh
 }
 
-pub fn assembled(blocks: impl IntoIterator<Item = Block>, carved: Mesh) -> Mesh {
-  blocks.into_iter().fold(carved, |mut whole, block| {
-    whole.merge(&block.mesh()).expect("blocks merge into the machine mesh");
-    whole
-  })
+pub fn merged(mut whole: Mesh, part: Mesh) -> Mesh {
+  whole.merge(&part).expect("meshes merge into one machine mesh");
+  whole
+}
+
+pub fn assembled(blocks: impl IntoIterator<Item = Block>) -> Mesh {
+  blocks
+    .into_iter()
+    .map(|block| block.mesh())
+    .reduce(merged)
+    .expect("a machine is made of at least one block")
 }
