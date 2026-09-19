@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Factory Game</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0d12;
+        color: #eef1f6;
+        font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      #game {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #notice {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        text-align: center;
+        padding: 24px;
+        background: #0a0d12;
+      }
+      #notice p {
+        margin: 0;
+        max-width: 42ch;
+        color: #8b93a1;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="notice">
+      <strong>Loading Factory Game…</strong>
+      <p>First load fetches a large WebAssembly bundle. Needs a WebGPU browser.</p>
+    </div>
+    <script type="module">
+      import init from './factory_game.js';
+
+      const notice = document.getElementById('notice');
+      if (!navigator.gpu) {
+        notice.innerHTML =
+          '<strong>WebGPU unavailable</strong><p>This build needs WebGPU for its particle effects. Try current Chrome, Edge, Safari 18+ or Firefox with WebGPU enabled.</p>';
+      } else {
+        init()
+          .then(() => notice.remove())
+          .catch((error) => {
+            notice.innerHTML = `<strong>Failed to start</strong><p>${error}</p>`;
+          });
+      }
+    </script>
+  </body>
+</html>

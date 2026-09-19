@@ -27,6 +27,8 @@ fn main() {
         primary_window: Some(Window {
           title: "Factory Game".into(),
           resolution: (1440, 810).into(),
+          canvas: Some("#game".into()),
+          fit_canvas_to_parent: true,
           ..default()
         }),
         ..default()
