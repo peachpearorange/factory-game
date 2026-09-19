@@ -15,13 +15,17 @@ mod ui;
 mod world;
 
 use {avian3d::prelude::*, bevy::prelude::*};
+#[cfg(target_arch = "wasm32")]
+use {bevy::winit::{UpdateMode, WinitSettings},
+     std::time::Duration};
 
 pub fn env_secs(key: &str) -> Option<f32> {
   std::env::var(key).ok().and_then(|value| value.parse().ok())
 }
 
 fn main() {
-  App::new()
+  let mut app = App::new();
+  app
     .add_plugins((
       DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -47,6 +51,18 @@ fn main() {
       ui::plugin,
       menu::plugin,
       showcase::plugin
-    ))
-    .run();
+    ));
+
+  #[cfg(target_arch = "wasm32")]
+  app.insert_resource(WinitSettings {
+    focused_mode: UpdateMode::Reactive {
+      wait: Duration::from_micros(16_667),
+      react_to_device_events: false,
+      react_to_user_events: false,
+      react_to_window_events: false
+    },
+    unfocused_mode: UpdateMode::reactive_low_power(Duration::from_millis(200))
+  });
+
+  app.run();
 }
