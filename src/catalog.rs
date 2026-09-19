@@ -21,6 +21,9 @@ const ARROWS_PER_BELT: usize = 3;
 const FURNACE_FOOT: f32 = 0.34;
 const FURNACE_MOUTH: f32 = FURNACE_FOOT + 0.52;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
+const DROPPER_BACK: f32 = -0.42;
+const CHUTE_FLOOR: f32 = 1.16;
+pub const CHUTE_REACH: f32 = 1.52;
 const WASH_BAR: f32 = 1.62;
 const BRUSH_TOP: f32 = 1.30;
 const BRUSH_HALF: f32 = 0.50;
@@ -31,7 +34,7 @@ const TORCH_HEAD: f32 = 1.25;
 const LAMP_HEIGHT: f32 = 2.0;
 const FLOOD_HEIGHT: f32 = 2.5;
 const LAMP_SHADE: f32 = 0.34;
-const FLOOD_SHADE: f32 = 0.62;
+const FLOOD_SPAN: f32 = 0.44;
 const LAMP_TILT: f32 = 0.55;
 const FLOOD_TILT: f32 = 0.65;
 const TORCH_GLOW: Color = Color::srgb(1.0, 0.66, 0.30);
@@ -250,10 +253,19 @@ impl MachineKind {
     }
   }
 
+  const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba> {
+    match self {
+      Self::Dropper => Some(dropper_paint),
+      Self::Orewash => Some(orewash_paint),
+      Self::Floodlight => Some(floodlight_paint),
+      _ => None
+    }
+  }
+
   fn accent(self) -> (Color, LinearRgba) {
     match self {
       Self::Conveyor => (Color::srgb(0.30, 0.31, 0.34), LinearRgba::BLACK),
-      Self::Dropper => (Color::srgb(0.52, 0.54, 0.58), LinearRgba::BLACK),
+      Self::Dropper => (Color::WHITE, LinearRgba::BLACK),
       Self::Forge => (Color::srgb(0.44, 0.24, 0.18), LinearRgba::rgb(0.85, 0.22, 0.03)),
       Self::FlameJet => (Color::srgb(0.46, 0.47, 0.50), LinearRgba::BLACK),
       Self::Furnace => (Color::srgb(0.30, 0.17, 0.13), LinearRgba::BLACK),
@@ -266,7 +278,7 @@ impl MachineKind {
       }
       Self::Torch | Self::Bonfire => (Color::WHITE, LinearRgba::BLACK),
       Self::Lamp => (Color::srgb(0.62, 0.64, 0.68), LinearRgba::BLACK),
-      Self::Floodlight => (Color::srgb(0.52, 0.55, 0.60), LinearRgba::BLACK)
+      Self::Floodlight => (Color::WHITE, LinearRgba::BLACK)
     }
   }
 }
@@ -297,17 +309,63 @@ fn arch() -> Tree {
 }
 
 fn dropper_body() -> Tree {
+  let strut = |side: f32| {
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.05, 0.26, 0.05), 0.03),
+      Vec3::new(0.30, CHUTE_FLOOR + 0.30, side * 0.26)
+    )
+  };
   sdf::union([
     sdf::at(
-      sdf::rounded_box(Vec3::new(0.78, 0.5, 0.78), 0.12),
-      Vec3::new(0.0, 1.85, 0.0)
+      sdf::rounded_box(Vec3::new(0.66, 0.08, 0.66), 0.05),
+      Vec3::new(DROPPER_BACK, 0.08, 0.0)
     ),
-    sdf::at(sdf::cuboid(Vec3::new(0.42, 0.78, 0.42)), Vec3::new(0.0, 0.78, 0.0)),
     sdf::at(
-      sdf::rounded_box(Vec3::new(0.78, 0.17, 0.28), 0.08),
-      Vec3::new(0.86, 1.4, 0.0)
-    )
+      sdf::rounded_box(Vec3::new(0.34, 0.64, 0.34), 0.08),
+      Vec3::new(DROPPER_BACK, 0.72, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.60, 0.46, 0.60), 0.10),
+      Vec3::new(DROPPER_BACK, 1.78, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.70, 0.08, 0.70), 0.05),
+      Vec3::new(DROPPER_BACK, 2.26, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.24, 0.34, 0.34), 0.08),
+      Vec3::new(DROPPER_BACK + 0.10, 1.26, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.30), 0.04),
+      Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.08, 0.26, 0.36), 0.06),
+      Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.20, 0.0)
+    ),
+    strut(1.0),
+    strut(-1.0)
   ])
+}
+
+fn dropper_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const STEEL: LinearRgba = LinearRgba::rgb(0.20, 0.22, 0.26);
+  const SHELL: LinearRgba = LinearRgba::rgb(0.62, 0.66, 0.72);
+  const HULL: LinearRgba = LinearRgba::rgb(0.05, 0.19, 0.44);
+  const HAZARD: LinearRgba = LinearRgba::rgb(0.92, 0.42, 0.02);
+
+  if at.y > 2.16 || at.y < 0.20 {
+    HAZARD
+  } else if at.y > 1.30 {
+    HULL
+  } else if at.x > CHUTE_REACH - 0.24 {
+    HAZARD
+  } else if at.x > 0.0 {
+    SHELL
+  } else {
+    STEEL
+  }
 }
 
 fn oven_shell() -> Tree {
@@ -620,6 +678,51 @@ impl Plume {
   }
 }
 
+fn flood_mast() -> Tree {
+  let head = |side: f32| {
+    sdf::union([
+      sdf::at(
+        sdf::rotate_z(sdf::rounded_box(Vec3::new(0.30, 0.26, 0.22), 0.05), FLOOD_TILT),
+        Vec3::new(0.0, FLOOD_HEIGHT, side * FLOOD_SPAN)
+      ),
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.07, 0.12, 0.07), 0.04),
+        Vec3::new(0.0, FLOOD_HEIGHT + 0.22, side * FLOOD_SPAN)
+      )
+    ])
+  };
+  sdf::union([
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.46, 0.08, 0.46), 0.05),
+      Vec3::new(0.0, 0.08, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.11, FLOOD_HEIGHT / 2.0, 0.11), 0.04),
+      Vec3::new(0.0, FLOOD_HEIGHT / 2.0, 0.0)
+    ),
+    sdf::at(
+      sdf::rounded_box(Vec3::new(0.08, 0.07, FLOOD_SPAN + 0.14), 0.05),
+      Vec3::new(0.0, FLOOD_HEIGHT + 0.30, 0.0)
+    ),
+    head(1.0),
+    head(-1.0)
+  ])
+}
+
+fn floodlight_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const MAST: LinearRgba = LinearRgba::rgb(0.52, 0.56, 0.62);
+  const HAZARD: LinearRgba = LinearRgba::rgb(0.92, 0.62, 0.02);
+  const HOUSING: LinearRgba = LinearRgba::rgb(0.08, 0.09, 0.11);
+
+  if at.y > FLOOD_HEIGHT - 0.38 {
+    HOUSING
+  } else if at.y < 0.20 || (at.y > 0.42 && at.y < 0.72) {
+    HAZARD
+  } else {
+    MAST
+  }
+}
+
 fn lamp_post(height: f32, shade: f32, tilt: f32) -> Tree {
   let hood = sdf::difference(
     sdf::rounded_cylinder(shade, 0.26, 0.1),
@@ -647,6 +750,9 @@ pub struct MachineAssets {
   bonfire_flame: Handle<EffectAsset>,
   jet_flame: Handle<EffectAsset>,
   wash_spray: Handle<EffectAsset>,
+  chute_mesh: Handle<Mesh>,
+  chute_material: Handle<StandardMaterial>,
+  lens_mesh: Handle<Mesh>,
   flap_mesh: Handle<Mesh>,
   flap_material: Handle<StandardMaterial>,
   sheet_mesh: Handle<Mesh>,
@@ -665,8 +771,9 @@ impl MachineAssets {
 
   fn baked(kind: MachineKind) -> Mesh {
     let bounds = || sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), 1.7, 7);
-    (kind == MachineKind::Orewash)
-      .then(|| sdf::bake_painted(Self::shape(kind), bounds(), orewash_paint))
+    kind
+      .paint()
+      .map(|paint| sdf::bake_painted(Self::shape(kind), bounds(), paint))
       .unwrap_or_else(|| sdf::bake(Self::shape(kind), bounds()))
   }
 
@@ -680,7 +787,7 @@ impl MachineAssets {
       MachineKind::Torch => torch_post(),
       MachineKind::Bonfire => bonfire_pile(),
       MachineKind::Lamp => lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT),
-      MachineKind::Floodlight => lamp_post(FLOOD_HEIGHT, FLOOD_SHADE, FLOOD_TILT),
+      MachineKind::Floodlight => flood_mast(),
       _ => arch()
     }
   }
@@ -798,6 +905,16 @@ fn load_machine_assets(
     bonfire_flame: effects.add(Plume::BONFIRE.asset()),
     jet_flame: effects.add(Plume::JET.asset()),
     wash_spray: effects.add(Plume::WASH.asset()),
+    chute_mesh: meshes.add(Cuboid::new(CHUTE_REACH - 0.18, 0.44, 0.44)),
+    chute_material: materials.add(StandardMaterial {
+      base_color: Color::srgba(0.42, 0.86, 0.98, 0.30),
+      perceptual_roughness: 0.2,
+      alpha_mode: AlphaMode::Blend,
+      double_sided: true,
+      cull_mode: None,
+      ..default()
+    }),
+    lens_mesh: meshes.add(Cuboid::new(0.44, 0.40, 0.08)),
     flap_mesh: meshes.add(Cuboid::new(0.05, 0.92, 0.19)),
     flap_material: materials.add(StandardMaterial {
       base_color: Color::srgba(0.32, 0.82, 0.96, 0.34),
@@ -869,8 +986,21 @@ pub fn place(
 
   match kind {
     MachineKind::Dropper => {
-      parts.push((Collider::cuboid(1.0, 1.6, 1.0), Transform::from_xyz(0.0, 0.8, 0.0)));
-      parts.push((Collider::cuboid(1.7, 1.0, 1.7), Transform::from_xyz(0.0, 1.85, 0.0)));
+      parts.push((
+        Collider::cuboid(0.9, 1.5, 0.9),
+        Transform::from_xyz(DROPPER_BACK, 0.75, 0.0)
+      ));
+      parts.push((
+        Collider::cuboid(1.3, 1.1, 1.3),
+        Transform::from_xyz(DROPPER_BACK, 1.78, 0.0)
+      ));
+      commands.spawn((
+        Mesh3d(assets.chute_mesh.clone()),
+        MeshMaterial3d(assets.chute_material.clone()),
+        NotShadowCaster,
+        Transform::from_xyz(CHUTE_REACH / 2.0 - 0.14, CHUTE_FLOOR + 0.22, 0.0),
+        ChildOf(root)
+      ));
       commands.entity(root).insert(Dropper {
         timer: Timer::from_seconds(0.65, TimerMode::Repeating),
         value: 12.0
@@ -944,23 +1074,54 @@ pub fn place(
         ChildOf(root)
       ));
     }
-    MachineKind::Lamp | MachineKind::Floodlight => {
-      let wide = kind == MachineKind::Floodlight;
-      let height = wide.then_some(FLOOD_HEIGHT).unwrap_or(LAMP_HEIGHT);
-      let shade = wide.then_some(FLOOD_SHADE).unwrap_or(LAMP_SHADE);
-      let tilt = wide.then_some(FLOOD_TILT).unwrap_or(LAMP_TILT);
-      let beam = Vec3::new(tilt.sin(), -tilt.cos(), 0.0);
+    MachineKind::Floodlight => {
+      let beam = Vec3::new(FLOOD_TILT.sin(), -FLOOD_TILT.cos(), 0.0);
       parts.push((
-        Collider::cylinder(shade, height + 0.5),
-        Transform::from_xyz(0.0, (height + 0.5) / 2.0, 0.0)
+        Collider::cuboid(0.7, FLOOD_HEIGHT + 0.6, FLOOD_SPAN * 2.0 + 0.6),
+        Transform::from_xyz(0.0, (FLOOD_HEIGHT + 0.6) / 2.0, 0.0)
       ));
       commands.spawn((
         SpotLight {
           color: LAMP_GLOW,
-          intensity: wide.then_some(9_000_000.0).unwrap_or(3_200_000.0),
-          range: wide.then_some(70.0).unwrap_or(34.0),
-          inner_angle: wide.then_some(0.30).unwrap_or(0.18),
-          outer_angle: wide.then_some(0.62).unwrap_or(0.42),
+          intensity: 9_000_000.0,
+          range: 70.0,
+          inner_angle: 0.30,
+          outer_angle: 0.62,
+          shadow_maps_enabled: true,
+          shadow_depth_bias: 0.1,
+          shadow_normal_bias: 3.4,
+          ..default()
+        },
+        Transform::from_translation(Vec3::new(0.0, FLOOD_HEIGHT, 0.0) + beam * 0.3)
+          .looking_to(beam, Vec3::Y),
+        ChildOf(root)
+      ));
+      for side in [-1.0, 1.0] {
+        commands.spawn((
+          Mesh3d(assets.lens_mesh.clone()),
+          MeshMaterial3d(assets.lamp_glow.clone()),
+          NotShadowCaster,
+          Transform::from_translation(
+            Vec3::new(0.0, FLOOD_HEIGHT, side * FLOOD_SPAN) + beam * 0.24
+          )
+          .looking_to(beam, Vec3::Y),
+          ChildOf(root)
+        ));
+      }
+    }
+    MachineKind::Lamp => {
+      let beam = Vec3::new(LAMP_TILT.sin(), -LAMP_TILT.cos(), 0.0);
+      parts.push((
+        Collider::cylinder(LAMP_SHADE, LAMP_HEIGHT + 0.5),
+        Transform::from_xyz(0.0, (LAMP_HEIGHT + 0.5) / 2.0, 0.0)
+      ));
+      commands.spawn((
+        SpotLight {
+          color: LAMP_GLOW,
+          intensity: 3_200_000.0,
+          range: 34.0,
+          inner_angle: 0.18,
+          outer_angle: 0.42,
           shadow_maps_enabled: true,
           shadow_depth_bias: 0.1,
           shadow_normal_bias: 3.4,
@@ -969,9 +1130,9 @@ pub fn place(
         Mesh3d(assets.glow_mesh.clone()),
         MeshMaterial3d(assets.lamp_glow.clone()),
         NotShadowCaster,
-        Transform::from_translation(Vec3::new(0.0, height, 0.0) + beam * 0.24)
+        Transform::from_translation(Vec3::new(0.0, LAMP_HEIGHT, 0.0) + beam * 0.24)
           .looking_to(beam, Vec3::Y)
-          .with_scale(Vec3::new(shade * 0.78, shade * 0.78, shade * 0.4)),
+          .with_scale(Vec3::new(LAMP_SHADE * 0.78, LAMP_SHADE * 0.78, LAMP_SHADE * 0.4)),
         ChildOf(root)
       ));
     }

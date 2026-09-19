@@ -1,11 +1,11 @@
-use {crate::{catalog::CELL,
+use {crate::{catalog::CHUTE_REACH,
              ore::{Effects, Ore, OreAssets, OreLimit}},
      avian3d::prelude::*,
      bevy::{ecs::{entity::EntityHashSet,
                   system::{SystemParam, lifetimeless::Read}},
             prelude::*}};
 
-const DROP_HEIGHT: f32 = 1.0;
+const DROP_HEIGHT: f32 = 0.92;
 const ARROW_SPEED: f32 = 0.85;
 pub const ARROW_SPAN: f32 = 1.2;
 
@@ -103,7 +103,7 @@ fn drop_ores(
   for (mut dropper, transform) in &mut droppers {
     dropper.timer.tick(time.delta());
     if dropper.timer.just_finished() && live < limit.0 {
-      let spawn = transform.transform_point(Vec3::new(CELL, DROP_HEIGHT, 0.0));
+      let spawn = transform.transform_point(Vec3::new(CHUTE_REACH, DROP_HEIGHT, 0.0));
       commands.spawn(assets.spawn(spawn, dropper.value));
       live += 1;
     }
