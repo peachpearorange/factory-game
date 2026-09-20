@@ -11,10 +11,10 @@ use {crate::{catalog::{MachineKind, MachinePreviews, Tier},
 
 const BUTTON: f32 = 72.0;
 const GLYPH_SCALE: f32 = 2.2;
-const TILE: f32 = 132.0;
+pub const TILE: f32 = 132.0;
 const COLUMNS: f32 = 3.0;
-const GAP: f32 = 6.0;
-const PADDING: f32 = 8.0;
+pub const GAP: f32 = 6.0;
+pub const PADDING: f32 = 8.0;
 const PANEL_WIDTH: f32 = COLUMNS * TILE + (COLUMNS - 1.0) * GAP + 2.0 * PADDING;
 const SCROLL_STEP: f32 = 42.0;
 const TOAST_LIFE: f32 = 1.6;
@@ -62,7 +62,7 @@ struct DeleteToggle;
 struct InventoryToggle;
 
 #[derive(Component)]
-struct ToastStack;
+pub struct ToastStack;
 
 #[derive(Component)]
 struct Toast(Timer);
@@ -97,7 +97,7 @@ fn header(glyph: impl Bundle, title: &str) -> impl Bundle {
   ])
 }
 
-fn grid() -> Node {
+pub fn grid() -> Node {
   Node {
     flex_direction: FlexDirection::Row,
     flex_wrap: FlexWrap::Wrap,
@@ -128,7 +128,7 @@ fn scroll_panels(
   }
 }
 
-fn tile(
+pub fn tile(
   preview: Handle<Image>,
   tier: Tier,
   name: &str,
@@ -304,7 +304,7 @@ fn spawn_toolbar(mut commands: Commands) {
     ]
   ));
 
-  commands.spawn((ToastStack, Node {
+  commands.spawn((ToastStack, GlobalZIndex(30), Node {
     position_type: PositionType::Absolute,
     bottom: percent(30),
     left: percent(50),
@@ -394,6 +394,14 @@ fn refresh_panels(
   }
 }
 
+pub fn announce(commands: &mut Commands, stack: Entity, message: &str, tint: Color) {
+  commands.spawn((
+    Toast(Timer::from_seconds(TOAST_LIFE, TimerMode::Once)),
+    tinted(message, 17.0, tint),
+    ChildOf(stack)
+  ));
+}
+
 fn buy_machines(
   tiles: Query<(&BuyTile, &Interaction), Changed<Interaction>>,
   stack: Single<Entity, With<ToastStack>>,
@@ -420,11 +428,7 @@ fn buy_machines(
           inventory.add(*kind);
           (format!("{} is yours", spec.name), style::GRANTED)
         });
-      commands.spawn((
-        Toast(Timer::from_seconds(TOAST_LIFE, TimerMode::Once)),
-        tinted(&announcement, 17.0, tint),
-        ChildOf(*stack)
-      ));
+      announce(&mut commands, *stack, &announcement, tint);
     }
   }
 }

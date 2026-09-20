@@ -76,6 +76,16 @@ pub fn union(shapes: impl IntoIterator<Item = Tree>) -> Tree {
   shapes.into_iter().reduce(|a, b| a.min(b)).expect("union of no shapes")
 }
 
+pub fn intersection(shapes: impl IntoIterator<Item = Tree>) -> Tree {
+  shapes.into_iter().reduce(|a, b| a.max(b)).expect("intersection of no shapes")
+}
+
+pub fn half_space(normal: Vec3, offset: f32) -> Tree {
+  let (x, y, z) = Tree::axes();
+  x * f64::from(normal.x) + y * f64::from(normal.y) + z * f64::from(normal.z)
+    - f64::from(offset)
+}
+
 pub fn difference(shape: Tree, cutout: Tree) -> Tree { shape.max(-cutout) }
 
 pub fn smooth_union(a: Tree, b: Tree, radius: f32) -> Tree {

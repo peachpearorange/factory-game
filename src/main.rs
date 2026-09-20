@@ -1,4 +1,5 @@
 mod block;
+mod boat;
 mod catalog;
 mod construction;
 mod icon;
@@ -48,6 +49,7 @@ fn main() {
       construction::plugin,
       player::plugin,
       store::plugin,
+      boat::plugin,
       ui::plugin,
       menu::plugin,
       showcase::plugin

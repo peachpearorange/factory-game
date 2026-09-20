@@ -27,6 +27,7 @@ pub const DELETE: Color = Color::srgb(0.98, 0.31, 0.29);
 pub const SHOT: Color = Color::srgb(0.99, 0.78, 0.34);
 pub const GRANTED: Color = Color::srgb(0.48, 0.96, 0.52);
 pub const DENIED: Color = Color::srgb(1.0, 0.56, 0.30);
+pub const TRADE: Color = Color::srgb(0.99, 0.84, 0.45);
 pub const SEALED: Color = Color::srgb(0.66, 0.72, 0.86);
 
 pub const TITLE: f32 = 23.0;

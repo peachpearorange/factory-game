@@ -58,6 +58,7 @@ struct HintDetail;
 
 fn floating(bottom: f32, width: f32) -> impl Bundle {
   (
+    GlobalZIndex(20),
     Node {
       position_type: PositionType::Absolute,
       bottom: px(bottom),
@@ -128,6 +129,7 @@ fn spawn_hud(mut commands: Commands) {
 
   commands.spawn((
     ModeHint,
+    GlobalZIndex(20),
     Node {
       position_type: PositionType::Absolute,
       bottom: px(100),

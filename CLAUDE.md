@@ -21,6 +21,7 @@ Env vars, all inert when unset:
 - `FACTORY_SHOT=<secs>` — take a screenshot at that elapsed time, then exit. Lands in `screenshots/`.
 - `FACTORY_DAY=<secs>` — length of one day/night cycle, default 240.
 - `FACTORY_TIME=<secs>` — how far into the cycle the game starts. 0 is sunrise, a quarter of `FACTORY_DAY` is noon, three quarters is midnight.
+- `FACTORY_TRADE=<secs>` — how long the trade boat stays away between visits, default 170. Set it low to watch it sail in.
 
 So `FACTORY_DAY=24 FACTORY_TIME=6 FACTORY_SHOT=2 cargo run` gives a noon screenshot straight away, and `FACTORY_TIME=17` gives a night one without waiting through the day.
 

@@ -151,3 +151,13 @@ pub fn radiation(color: Color) -> impl Bundle {
     fill(7.5, 7.5, 5.0, 5.0, 2.5, color),
   ])
 }
+
+pub fn anchor(color: Color) -> impl Bundle {
+  glyph(children![
+    ring(7.0, 0.5, 6.0, 1.7, 3.0, color),
+    fill(8.8, 4.5, 2.4, 13.0, 1.2, color),
+    fill(3.5, 6.0, 13.0, 2.2, 1.1, color),
+    turned(fill(2.0, 12.0, 6.5, 2.2, 1.1, color), 38.0),
+    turned(fill(11.5, 12.0, 6.5, 2.2, 1.1, color), -38.0),
+  ])
+}
