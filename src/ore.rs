@@ -192,7 +192,7 @@ fn fade_dropped_ores(
   mut commands: Commands
 ) {
   for (entity, ore, transform, mut painted, fading) in &mut ores {
-    let floored = transform.translation.y < GROUND + SETTLED;
+    let floored = transform.translation.y < GROUND + SETTLED * ore.girth;
     let recovered = !floored && fading.is_some();
     if floored && let Some(mut fading) = fading {
       let left = 1.0 - fading.0.tick(time.delta()).fraction();
