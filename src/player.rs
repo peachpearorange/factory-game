@@ -209,7 +209,7 @@ fn spawn_player(
     Bloom { intensity: 0.34, ..Bloom::NATURAL },
     Projection::Perspective(PerspectiveProjection {
       fov: 68f32.to_radians(),
-      far: 900.0,
+      far: 2400.0,
       ..default()
     }),
     Transform::from_xyz(-13.0, 6.0, 18.0).looking_at(Vec3::new(-13.0, 2.5, 7.0), Vec3::Y)

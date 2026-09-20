@@ -109,6 +109,51 @@ pub fn swell() -> Image {
   })
 }
 
+pub fn clouds(weave: i32) -> Image {
+  tiling(move |u, v| {
+    let billow = 0.44 * noise(u, v, weave, weave + 1)
+      + 0.26 * noise(u, v, weave * 2 + 1, weave * 2)
+      + 0.16 * noise(u, v, weave * 5 + 2, weave * 5 + 1)
+      + 0.09 * noise(u, v, weave * 11 + 3, weave * 11 + 2)
+      + 0.05 * noise(u, v, weave * 23 + 5, weave * 23 + 3);
+    let body = ((billow - 0.53) / 0.21).clamp(0.0, 1.0);
+    let cover = body * body * (3.0 - 2.0 * body);
+    let lit = 0.86 + 0.14 * cover;
+    let level = |shade: f32| (shade.clamp(0.0, 1.0) * 255.0) as u8;
+    [level(lit), level(lit), level(lit * 0.99), level(cover)]
+  })
+}
+
+pub const SKY: UVec2 = UVec2::new(96, 56);
+
+pub fn sky() -> Image {
+  let mut image = Image::new(
+    Extent3d { width: SKY.x, height: SKY.y, depth_or_array_layers: 1 },
+    TextureDimension::D2,
+    vec![0; (SKY.x * SKY.y * 4) as usize],
+    TextureFormat::Rgba8UnormSrgb,
+    RenderAssetUsages::all()
+  );
+  image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+    address_mode_u: ImageAddressMode::Repeat,
+    address_mode_v: ImageAddressMode::ClampToEdge,
+    ..ImageSamplerDescriptor::linear()
+  });
+  image
+}
+
+pub fn repaint_sky(image: &mut Image, shade: impl Fn(f32, f32) -> [u8; 4]) {
+  if let Some(data) = image.data.as_mut() {
+    for index in 0..SKY.x * SKY.y {
+      let pixel = shade(
+        (index % SKY.x) as f32 / (SKY.x - 1) as f32,
+        (index / SKY.x) as f32 / (SKY.y - 1) as f32
+      );
+      data[index as usize * 4..index as usize * 4 + 4].copy_from_slice(&pixel);
+    }
+  }
+}
+
 pub fn wood() -> Image {
   const PALE: Vec3 = Vec3::new(0.56, 0.40, 0.23);
   const DARK: Vec3 = Vec3::new(0.19, 0.11, 0.05);
