@@ -111,7 +111,7 @@ fn auto_shoot(
   mut commands: Commands,
   mut quit: MessageWriter<AppExit>
 ) {
-  if let Some(due) = crate::env_secs("FACTORY_SHOT") {
+  if let Some(due) = crate::opts::opts().shot {
     if !*taken && time.elapsed_secs() > due {
       *taken = true;
       shoot(&mut commands);

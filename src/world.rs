@@ -75,10 +75,7 @@ impl DayClock {
 
 impl Default for DayClock {
   fn default() -> Self {
-    Self {
-      length: crate::env_secs("FACTORY_DAY").unwrap_or(240.0),
-      start: crate::env_secs("FACTORY_TIME").unwrap_or(0.0)
-    }
+    Self { length: crate::opts::opts().day, start: crate::opts::opts().time }
   }
 }
 

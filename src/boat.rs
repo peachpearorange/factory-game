@@ -29,7 +29,7 @@ const OFFING: f32 = 110.0;
 const CRUISE: f32 = 11.0;
 const EASING: f32 = 26.0;
 const VISIT: f32 = 75.0;
-const INTERVAL: f32 = 170.0;
+pub const INTERVAL: f32 = 170.0;
 const TRADE_RANGE: f32 = 16.0;
 const SLOTS: usize = 4;
 
@@ -365,12 +365,7 @@ struct Voyage {
   fresh: bool
 }
 
-fn waiting() -> Timer {
-  Timer::from_seconds(
-    crate::env_secs("FACTORY_TRADE").unwrap_or(INTERVAL),
-    TimerMode::Once
-  )
-}
+fn waiting() -> Timer { Timer::from_seconds(crate::opts::opts().trade, TimerMode::Once) }
 
 impl Default for Voyage {
   fn default() -> Self {

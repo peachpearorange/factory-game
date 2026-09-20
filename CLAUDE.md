@@ -17,13 +17,15 @@ avoid comments. just have code self-explanatory by names and structure. concise.
 # Notes
 `world::GROUND` is y = 0, the exact top of the concrete platform. Author every shape and spawn position relative to it so meshes rest on the ground.
 
-Env vars, all inert when unset:
-- `FACTORY_SHOT=<secs>` — take a screenshot at that elapsed time, then exit. Lands in `screenshots/`.
-- `FACTORY_DAY=<secs>` — length of one day/night cycle, default 240.
-- `FACTORY_TIME=<secs>` — how far into the cycle the game starts. 0 is sunrise, a quarter of `FACTORY_DAY` is noon, three quarters is midnight.
-- `FACTORY_TRADE=<secs>` — how long the trade boat stays away between visits, default 170. Set it low to watch it sail in.
+One env var, `FACTORY`, holds a JSON5 `opts::Opts` — braces, unquoted keys, missing fields take their defaults, an unknown field panics at startup with the field list. Unset means every default, so the game runs as usual.
 
-So `FACTORY_DAY=24 FACTORY_TIME=6 FACTORY_SHOT=2 cargo run` gives a noon screenshot straight away, and `FACTORY_TIME=17` gives a night one without waiting through the day.
+- `day: <secs>` — length of one day/night cycle, default 240.
+- `time: <secs>` — how far into the cycle the game starts. 0 is sunrise, a quarter of `day` is noon, three quarters is midnight.
+- `trade: <secs>` — how long the trade boat stays away between visits, default 170. Set it low to watch it sail in.
+- `shot: <secs>` — take a screenshot at that elapsed time, then exit. Lands in `screenshots/`.
+- `showcase: '<machine name fragment>'` — see below.
 
-`tools/showcase <machine name fragment>` is the way to look at a machine. It places it at the origin, flanked by conveyors if it carries a belt, hides the HUD, freezes the player camera, and orbits 35/125/215/305 degrees at dawn, noon and night, writing twelve shots to `screenshots/showcase/<machine>-<moment>-<angle>deg.png` before exiting. `FACTORY_SHOWCASE=<fragment>` alone does the same without the script. The fragment matches the spec name ignoring case and punctuation, so `orewash` finds The Orewash.
+So `FACTORY='{day: 24, time: 6, shot: 2}' cargo run` gives a noon screenshot straight away, and `time: 17` gives a night one without waiting through the day. Add a field to `Opts` for each new knob rather than reaching for a second var.
+
+`tools/showcase <machine name fragment>` is the way to look at a machine. It places it at the origin, flanked by conveyors if it carries a belt, hides the HUD, freezes the player camera, and orbits 35/125/215/305 degrees at dawn, noon and night, writing twelve shots to `screenshots/showcase/<machine>-<moment>-<angle>deg.png` before exiting. `FACTORY="{showcase: 'orewash'}"` alone does the same without the script. The fragment matches the spec name ignoring case and punctuation, so `orewash` finds The Orewash.
 

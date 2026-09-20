@@ -35,10 +35,10 @@ fn slug(text: &str) -> String {
 }
 
 fn wanted() -> Option<MachineKind> {
-  std::env::var("FACTORY_SHOWCASE").ok().and_then(|asked| {
+  crate::opts::opts().showcase.as_ref().and_then(|asked| {
     MachineKind::ALL
       .into_iter()
-      .find(|kind| slug(kind.spec().name).contains(&slug(&asked)))
+      .find(|kind| slug(kind.spec().name).contains(&slug(asked)))
   })
 }
 

@@ -5,6 +5,7 @@ mod construction;
 mod icon;
 mod machine;
 mod menu;
+mod opts;
 mod ore;
 mod player;
 mod sdf;
@@ -19,10 +20,6 @@ use {avian3d::prelude::*, bevy::prelude::*};
 #[cfg(target_arch = "wasm32")]
 use {bevy::winit::{UpdateMode, WinitSettings},
      std::time::Duration};
-
-pub fn env_secs(key: &str) -> Option<f32> {
-  std::env::var(key).ok().and_then(|value| value.parse().ok())
-}
 
 fn main() {
   let mut app = App::new();

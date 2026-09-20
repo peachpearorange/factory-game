@@ -5,4 +5,4 @@
 # screenshots/showcase/ before exiting.
 set -e
 test -n "$1" || { echo "usage: tools/showcase <machine name fragment>" >&2; exit 2; }
-exec env FACTORY_SHOWCASE="$1" cargo run --quiet
+exec env FACTORY="{showcase: '$1'}" cargo run --quiet
