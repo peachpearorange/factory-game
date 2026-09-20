@@ -8,6 +8,7 @@ use {crate::{catalog::CHUTE_REACH,
 const DROP_HEIGHT: f32 = 0.92;
 const ARROW_SPEED: f32 = 0.45;
 const GIRTH_DETAIL: u32 = 8;
+pub const PURSE: f32 = 600.0;
 
 #[derive(Component)]
 #[require(ActiveCollisionHooks::MODIFY_CONTACTS)]
@@ -90,7 +91,7 @@ pub struct OreSold {
 pub struct Money(pub f32);
 
 impl Default for Money {
-  fn default() -> Self { Self(600.0) }
+  fn default() -> Self { Self(crate::opts::opts().money) }
 }
 
 fn machine_and_ore<'w, T: Component>(

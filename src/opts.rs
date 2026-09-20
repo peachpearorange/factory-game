@@ -8,6 +8,7 @@ pub struct Opts {
   pub day: f32,
   pub time: f32,
   pub trade: f32,
+  pub money: f32,
   pub shot: Option<f32>,
   pub showcase: Option<String>
 }
@@ -18,6 +19,7 @@ impl Default for Opts {
       day: 240.0,
       time: 0.0,
       trade: crate::boat::INTERVAL,
+      money: crate::machine::PURSE,
       shot: None,
       showcase: None
     }
