@@ -39,6 +39,14 @@ const BRUSH_HALF: f32 = 0.50;
 const FLAPS_PER_CURTAIN: usize = 5;
 const FLAP_REACH: f32 = 0.87;
 const CHILL_CELLS: i32 = 2;
+const GATES: [(f32, f32); 3] = [(0.95, 0.52), (1.20, 0.68), (1.45, 0.86)];
+const GATE_WALL: f32 = 0.10;
+const GATE_HALF: f32 = 0.08;
+const GATE_STEP: f32 = 0.80;
+const SPINE_TILT: f32 = 0.30;
+const SPINE_MID: f32 = BELT_TOP + 1.30;
+const DRUM_AT: Vec3 = Vec3::new(-0.34, 0.62, -0.78);
+const GAUGE_AT: Vec3 = Vec3::new(DRUM_AT.x + 0.20, DRUM_AT.y + 0.18, DRUM_AT.z - 0.18);
 const BONFIRE_TOP: f32 = 0.92;
 const TORCH_HEAD: f32 = 1.25;
 const LAMP_HEIGHT: f32 = 2.0;
@@ -50,6 +58,7 @@ const FLOOD_TILT: f32 = 0.65;
 const TORCH_GLOW: Color = Color::srgb(1.0, 0.66, 0.30);
 const EMBER_GLOW: Color = Color::srgb(1.0, 0.42, 0.10);
 const LAMP_GLOW: Color = Color::srgb(1.0, 0.95, 0.86);
+const GAUGE_GLOW: Color = Color::srgb(1.0, 0.84, 0.36);
 
 const fn belt_half(cells: i32) -> f32 { cells as f32 * CELL / 2.0 - 0.01 }
 
@@ -65,6 +74,7 @@ pub enum MachineKind {
   Orewash,
   ChillBeam,
   DecayChamber,
+  Embiggener,
   Torch,
   Bonfire,
   Lamp,
@@ -135,8 +145,12 @@ impl Tier {
   }
 }
 
+const fn stamps(multiplier: f32, effects: Effects) -> Option<Upgrader> {
+  Some(Upgrader { multiplier, effects, growth: 1.0 })
+}
+
 impl MachineKind {
-  pub const ALL: [Self; 14] = [
+  pub const ALL: [Self; 15] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Coop,
@@ -147,6 +161,7 @@ impl MachineKind {
     Self::Orewash,
     Self::ChillBeam,
     Self::DecayChamber,
+    Self::Embiggener,
     Self::Torch,
     Self::Bonfire,
     Self::Lamp,
@@ -166,6 +181,7 @@ impl MachineKind {
         | Self::Orewash
         | Self::ChillBeam
         | Self::DecayChamber
+        | Self::Embiggener
     )
   }
 
@@ -256,6 +272,15 @@ impl MachineKind {
         tier: Tier::Mythic,
         unlock: Some("Burn 250 ore")
       },
+      Self::Embiggener => MachineSpec {
+        name: "The Embiggener",
+        blurb: "Ore goes in, a bigger ore comes out. A perfectly cromulent way to \
+                raise its worth. The gates are solid, so an ore that has already \
+                grown twice will not fit through the inlet.",
+        price: 1100.0,
+        tier: Tier::Exotic,
+        unlock: None
+      },
       Self::Torch => MachineSpec {
         name: "Torch",
         blurb: "A burning brand on a stake. Keeps the dark off a corner of the floor.",
@@ -289,13 +314,14 @@ impl MachineKind {
 
   pub const fn upgrade(self) -> Option<Upgrader> {
     match self {
-      Self::Forge => Some(Upgrader { multiplier: 2.5, effects: Effects::FIERY }),
-      Self::FlameJet => Some(Upgrader { multiplier: 3.2, effects: Effects::FIERY }),
-      Self::MistCoil => Some(Upgrader { multiplier: 4.0, effects: Effects::WET }),
-      Self::Orewash => Some(Upgrader { multiplier: 3.0, effects: Effects::WET }),
-      Self::ChillBeam => Some(Upgrader { multiplier: 5.0, effects: Effects::FROSTY }),
-      Self::DecayChamber => {
-        Some(Upgrader { multiplier: 9.0, effects: Effects::RADIOACTIVE })
+      Self::Forge => stamps(2.5, Effects::FIERY),
+      Self::FlameJet => stamps(3.2, Effects::FIERY),
+      Self::MistCoil => stamps(4.0, Effects::WET),
+      Self::Orewash => stamps(3.0, Effects::WET),
+      Self::ChillBeam => stamps(5.0, Effects::FROSTY),
+      Self::DecayChamber => stamps(9.0, Effects::RADIOACTIVE),
+      Self::Embiggener => {
+        Some(Upgrader { multiplier: 2.0, effects: Effects::NONE, growth: 1.35 })
       }
       _ => None
     }
@@ -313,7 +339,7 @@ impl MachineKind {
       Self::Orewash => Surface::Plastic,
       Self::Torch | Self::Bonfire => Surface::Wood,
       Self::Coop => Surface::Planked,
-      Self::Lamp | Self::Floodlight | Self::FlameJet => Surface::Metal,
+      Self::Lamp | Self::Floodlight | Self::FlameJet | Self::Embiggener => Surface::Metal,
       Self::ChillBeam => Surface::Plastic,
       _ => Surface::Painted
     }
@@ -324,6 +350,7 @@ impl MachineKind {
       Self::Dropper => Some(dropper_paint),
       Self::Orewash => Some(orewash_paint),
       Self::ChillBeam => Some(chill_paint),
+      Self::Embiggener => Some(embiggener_paint),
       Self::Floodlight => Some(floodlight_paint),
       _ => None
     }
@@ -343,6 +370,7 @@ impl MachineKind {
       Self::DecayChamber => {
         (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
       }
+      Self::Embiggener => (Color::WHITE, LinearRgba::BLACK),
       Self::Torch | Self::Bonfire => (Color::WHITE, LinearRgba::BLACK),
       Self::Lamp => (Color::srgb(0.62, 0.64, 0.68), LinearRgba::BLACK),
       Self::Floodlight => (Color::WHITE, LinearRgba::BLACK)
@@ -373,6 +401,64 @@ fn arch() -> Tree {
     ),
     sdf::at(sdf::cylinder(0.2, 0.26), Vec3::new(0.0, 2.4, 0.0))
   ])
+}
+
+fn embiggener_frame() -> Tree {
+  let gate = |slot: usize| {
+    let (high, wide) = GATES[slot];
+    let frame =
+      |grow: f32| sdf::rounded_box(Vec3::new(GATE_HALF, high + grow, wide + grow), 0.06);
+    sdf::at(
+      sdf::difference(frame(GATE_WALL), frame(0.0)),
+      Vec3::new(slot as f32 * GATE_STEP - GATE_STEP, BELT_TOP, 0.0)
+    )
+  };
+  let spine = |side: f32| {
+    sdf::at(
+      sdf::rotate_z(sdf::cuboid(Vec3::new(0.84, 0.05, 0.05)), SPINE_TILT),
+      Vec3::new(0.0, SPINE_MID, side * 0.55)
+    )
+  };
+  let riser = sdf::union([
+    sdf::at(sdf::cylinder(0.07, 0.30), Vec3::new(DRUM_AT.x, DRUM_AT.y + 0.76, DRUM_AT.z)),
+    sdf::at(
+      sdf::along_z(sdf::cylinder(0.07, 0.18)),
+      Vec3::new(DRUM_AT.x, DRUM_AT.y + 1.02, DRUM_AT.z + 0.18)
+    )
+  ]);
+  sdf::union([
+    belt_deck(belt_half(1)),
+    sdf::intersection([
+      sdf::union([gate(0), gate(1), gate(2), spine(1.0), spine(-1.0)]),
+      sdf::half_space(Vec3::NEG_Y, -BELT_TOP)
+    ]),
+    sdf::at(sdf::rounded_box(Vec3::new(0.26, 0.40, 0.22), 0.12), DRUM_AT),
+    sdf::at(sdf::cylinder(0.13, 0.06), Vec3::new(DRUM_AT.x, DRUM_AT.y + 0.46, DRUM_AT.z)),
+    riser
+  ])
+}
+
+fn embiggener_paint(at: Vec3, _: Vec3) -> LinearRgba {
+  const DECK: LinearRgba = LinearRgba::rgb(0.24, 0.25, 0.28);
+  const STEEL: LinearRgba = LinearRgba::rgb(0.55, 0.58, 0.63);
+  const BRASS: LinearRgba = LinearRgba::rgb(0.78, 0.58, 0.20);
+  const GOLD: LinearRgba = LinearRgba::rgb(0.96, 0.78, 0.26);
+  const BOILER: LinearRgba = LinearRgba::rgb(0.70, 0.17, 0.13);
+  const COPPER: LinearRgba = LinearRgba::rgb(0.72, 0.40, 0.19);
+
+  let boiler = (at.x - DRUM_AT.x).abs() < 0.34 && at.z < DRUM_AT.z + 0.40;
+
+  if at.y < BELT_TOP + 0.02 {
+    DECK
+  } else if boiler {
+    (at.y > DRUM_AT.y + 0.40).then(|| COPPER).unwrap_or(BOILER)
+  } else if at.x < -GATE_STEP / 2.0 {
+    STEEL
+  } else if at.x < GATE_STEP / 2.0 {
+    BRASS
+  } else {
+    GOLD
+  }
 }
 
 fn dropper_body() -> Tree {
@@ -1127,6 +1213,7 @@ pub struct MachineAssets {
   coals_glow: Handle<StandardMaterial>,
   lamp_glow: Handle<StandardMaterial>,
   chill_glow: Handle<StandardMaterial>,
+  gauge_glow: Handle<StandardMaterial>,
   pub ghost_valid: Handle<StandardMaterial>,
   pub ghost_blocked: Handle<StandardMaterial>
 }
@@ -1154,6 +1241,7 @@ impl MachineAssets {
     match kind {
       MachineKind::Conveyor => belt_deck(belt_half(1)),
       MachineKind::Dropper => dropper_body(),
+      MachineKind::Embiggener => embiggener_frame(),
       MachineKind::FlameJet => jet_nozzle(),
       MachineKind::Orewash => orewash_tunnel(),
       MachineKind::ChillBeam => chill_gantry(),
@@ -1351,6 +1439,12 @@ fn load_machine_assets(
     chill_glow: materials.add(StandardMaterial {
       base_color: CHILL_GLOW,
       emissive: LinearRgba::rgb(0.6, 5.0, 12.0),
+      ..default()
+    }),
+    gauge_glow: materials.add(StandardMaterial {
+      base_color: GAUGE_GLOW,
+      emissive: LinearRgba::rgb(2.6, 1.5, 0.22),
+      perceptual_roughness: 0.2,
       ..default()
     }),
     ghost_valid: materials.add(ghost(Color::srgba(0.25, 0.95, 0.45, 0.35))),
@@ -1675,6 +1769,31 @@ pub fn place(
             Transform::from_xyz(0.0, CHILL_MOUTH, 0.0).with_scale(Vec3::splat(0.12)),
             ChildOf(root)
           ));
+        } else if kind == MachineKind::Embiggener {
+          for (slot, (high, wide)) in GATES.into_iter().enumerate() {
+            let along = slot as f32 * GATE_STEP - GATE_STEP;
+            for side in [-1.0, 1.0] {
+              parts.push((
+                Collider::cuboid(GATE_HALF * 2.0, high + GATE_WALL, GATE_WALL),
+                Transform::from_xyz(
+                  along,
+                  BELT_TOP + (high + GATE_WALL) / 2.0,
+                  side * (wide + GATE_WALL / 2.0)
+                )
+              ));
+            }
+            parts.push((
+              Collider::cuboid(GATE_HALF * 2.0, GATE_WALL, (wide + GATE_WALL) * 2.0),
+              Transform::from_xyz(along, BELT_TOP + high + GATE_WALL / 2.0, 0.0)
+            ));
+          }
+          commands.spawn((
+            Mesh3d(assets.glow_mesh.clone()),
+            MeshMaterial3d(assets.gauge_glow.clone()),
+            NotShadowCaster,
+            Transform::from_translation(GAUGE_AT).with_scale(Vec3::splat(0.11)),
+            ChildOf(root)
+          ));
         } else {
           parts.push((
             Collider::cuboid(1.04, 2.5, 0.5),
@@ -1711,12 +1830,14 @@ pub fn place(
             ));
           }
         }
+        let sensed =
+          (kind == MachineKind::Embiggener).then(|| -GATE_STEP / 2.0).unwrap_or_default();
         commands.spawn((
           upgrader,
           Collider::cuboid(0.5, 0.8, 1.5),
           Sensor,
           CollisionEventsEnabled,
-          Transform::from_xyz(0.0, BELT_TOP + 0.4, 0.0),
+          Transform::from_xyz(sensed, BELT_TOP + 0.4, 0.0),
           ChildOf(root)
         ));
       }

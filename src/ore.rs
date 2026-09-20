@@ -101,11 +101,14 @@ impl OreForm {
   }
 }
 
+pub const GIRTH_CAP: f32 = 1.8;
+
 #[derive(Component)]
 pub struct Ore {
   pub value: f32,
   pub effects: Effects,
-  pub form: OreForm
+  pub form: OreForm,
+  pub girth: f32
 }
 
 #[derive(Resource)]
@@ -125,7 +128,7 @@ pub struct OreAssets {
 impl OreAssets {
   pub fn spawn(&self, form: OreForm, position: Vec3, value: f32) -> impl Bundle {
     (
-      Ore { value, effects: Effects::NONE, form },
+      Ore { value, effects: Effects::NONE, form, girth: 1.0 },
       RigidBody::Dynamic,
       self.colliders[form.index()].clone(),
       CollisionMargin(0.01),

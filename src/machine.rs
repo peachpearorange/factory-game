@@ -1,5 +1,5 @@
 use {crate::{catalog::CHUTE_REACH,
-             ore::{Effects, Ore, OreAssets, OreForm, OreLimit}},
+             ore::{Effects, GIRTH_CAP, Ore, OreAssets, OreForm, OreLimit}},
      avian3d::prelude::*,
      bevy::{ecs::{entity::EntityHashSet,
                   system::{SystemParam, lifetimeless::Read}},
@@ -7,6 +7,7 @@ use {crate::{catalog::CHUTE_REACH,
 
 const DROP_HEIGHT: f32 = 0.92;
 const ARROW_SPEED: f32 = 0.45;
+const GIRTH_DETAIL: u32 = 8;
 
 #[derive(Component)]
 #[require(ActiveCollisionHooks::MODIFY_CONTACTS)]
@@ -66,7 +67,14 @@ pub struct Dropper {
 #[derive(Component)]
 pub struct Upgrader {
   pub multiplier: f32,
-  pub effects: Effects
+  pub effects: Effects,
+  pub growth: f32
+}
+
+impl Upgrader {
+  fn takes(&self, ore: &Ore) -> bool {
+    !ore.effects.contains(self.effects) || (self.growth > 1.0 && ore.girth < GIRTH_CAP)
+  }
 }
 
 #[derive(Component)]
@@ -117,16 +125,25 @@ fn upgrade_ores(
   mut events: MessageReader<CollisionStart>,
   upgraders: Query<&Upgrader>,
   assets: Res<OreAssets>,
-  mut ores: Query<(&mut Ore, &mut MeshMaterial3d<StandardMaterial>)>
+  mut ores: Query<(
+    &mut Ore,
+    &mut MeshMaterial3d<StandardMaterial>,
+    &mut Transform,
+    &mut Collider
+  )>
 ) {
   for event in events.read() {
     if let Some((upgrader, entity)) = machine_and_ore(event, &upgraders)
-      && let Ok((mut ore, mut material)) = ores.get_mut(entity)
-      && !ore.effects.contains(upgrader.effects)
+      && let Ok((mut ore, mut material, mut transform, mut collider)) =
+        ores.get_mut(entity)
+      && upgrader.takes(&ore)
     {
       ore.value *= upgrader.multiplier;
       ore.effects = ore.effects.with(upgrader.effects);
+      ore.girth = (ore.girth * upgrader.growth).min(GIRTH_CAP);
       material.0 = assets.material(ore.form, ore.effects);
+      transform.scale = Vec3::splat(ore.girth);
+      collider.set_scale(Vec3::splat(ore.girth), GIRTH_DETAIL);
     }
   }
 }
