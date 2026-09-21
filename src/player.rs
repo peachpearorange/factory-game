@@ -1,9 +1,10 @@
 use {crate::{machine::ConveyorBelt,
              menu::playing,
              sdf,
-             world::{Daylight, GROUND}},
+             world::{Daylight, GROUND, SEA_LEVEL}},
      avian3d::{math::AdjustPrecision, prelude::*},
      bevy::{asset::AssetId,
+            camera::visibility::NoFrustumCulling,
             input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
             light::NotShadowCaster,
             platform::collections::{HashMap, HashSet},
@@ -26,6 +27,11 @@ const HEAD_HALF: f32 = 0.28;
 const HOLD_ANGLE: f32 = 1.35;
 const LIFT_EASE: f32 = 7.0;
 const LIMB_BLEND: f32 = 9.0;
+const DANGLE_RATE: f32 = 3.1;
+const FLOAT_DEPTH: f32 = 1.2;
+const BUOYANCY: f32 = 26.0;
+const WATER_DRAG: f32 = 3.6;
+const SWIM_DRAG: f32 = 0.44;
 const HAND: f32 = -2.0 * ARM_HALF.y;
 const FADE_ALPHA: f32 = 0.22;
 
@@ -55,6 +61,7 @@ struct Gait {
 struct Limb {
   swing: f32,
   lifted: f32,
+  dangle: f32,
   holds_light: bool
 }
 
@@ -152,7 +159,7 @@ fn spawn_player(
   for side in [-1.0, 1.0] {
     let arm = commands
       .spawn((
-        Limb { swing: side, lifted: -2.3, holds_light: side > 0.0 },
+        Limb { swing: side, lifted: -2.3, dangle: 0.0, holds_light: side > 0.0 },
         Mesh3d(arm.clone()),
         MeshMaterial3d(skin.clone()),
         Transform::from_xyz(side * 0.61, SHOULDER, 0.0),
@@ -160,7 +167,7 @@ fn spawn_player(
       ))
       .id();
     commands.spawn((
-      Limb { swing: -side, lifted: -0.45, holds_light: false },
+      Limb { swing: -side, lifted: 0.0, dangle: 0.42, holds_light: false },
       Mesh3d(leg.clone()),
       MeshMaterial3d(skin.clone()),
       Transform::from_xyz(side * 0.21, HIP, 0.0),
@@ -187,6 +194,7 @@ fn spawn_player(
           ..default()
         })),
         NotShadowCaster,
+        NoFrustumCulling,
         Transform::from_xyz(0.0, HAND + 0.10, 0.24)
           .with_rotation(Quat::from_rotation_x(HOLD_ANGLE) * Quat::from_rotation_y(PI)),
         children![(
@@ -270,24 +278,32 @@ fn move_player(
     })
     .unwrap_or(Vec3::ZERO);
 
+  let submerged = ((SEA_LEVEL - transform.translation.y) / FLOAT_DEPTH).clamp(0.0, 1.0);
   let pull = gravity.0.y * time.delta_secs();
-  let fall = velocity.y + pull;
-  let drive = grounded.then(|| wish + carry).unwrap_or(velocity.0.with_y(0.0));
+  let lift = BUOYANCY * submerged * time.delta_secs();
+  let afloat = lift + pull > 0.0;
+  let swimming = submerged > 0.0;
+  let fall =
+    (velocity.y + pull + lift) * (-WATER_DRAG * submerged * time.delta_secs()).exp();
+  let paddle = wish * (1.0 - submerged * SWIM_DRAG);
+  let drive =
+    (grounded || swimming).then(|| paddle + carry).unwrap_or(velocity.0.with_y(0.0));
   velocity.0 = Vec3::new(
     drive.x,
-    if grounded && keys.just_pressed(KeyCode::Space) {
+    if grounded && !afloat && keys.just_pressed(KeyCode::Space) {
       (-2.0 * gravity.0.y * JUMP_HEIGHT).sqrt()
-    } else if grounded {
+    } else if grounded && !afloat {
       fall.max(pull)
     } else {
       fall
     },
     drive.z
   );
-  let flying = (!grounded && velocity.y.abs() > 0.5).then_some(1.0).unwrap_or(0.0);
+  let flying =
+    (!grounded && !swimming && velocity.y.abs() > 0.5).then_some(1.0).unwrap_or(0.0);
   gait.lift = gait.lift.lerp(flying, 1.0 - (-LIFT_EASE * time.delta_secs()).exp());
 
-  if grounded && wish.length_squared() > 0.0 {
+  if (grounded || swimming) && wish.length_squared() > 0.0 {
     let facing = Quat::from_rotation_y(wish.x.atan2(wish.z));
     transform.rotation =
       transform.rotation.slerp(facing, 1.0 - (-TURN_RATE * time.delta_secs()).exp());
@@ -318,13 +334,15 @@ fn animate_body(
 ) {
   let (velocity, mut gait) = walker.into_inner();
   let pace = velocity.0.with_y(0.0).length();
-  gait.cycle += pace * time.delta_secs() * 2.1;
-  let stride = gait.cycle.sin() * (pace / WALK_SPEED).min(1.0) * 0.85;
+  gait.cycle += (pace * 2.1).lerp(DANGLE_RATE, gait.lift) * time.delta_secs();
+  let wave = gait.cycle.sin();
+  let stride = wave * (pace / WALK_SPEED).min(1.0) * 0.85;
   let hold = (nightfall(&daylight) * 6.0).min(1.0);
   let blend = 1.0 - (-LIMB_BLEND * time.delta_secs()).exp();
 
   for (limb, mut transform) in &mut limbs {
-    let posed = (stride * limb.swing).lerp(limb.lifted, gait.lift);
+    let loose = limb.lifted + wave * limb.dangle * limb.swing;
+    let posed = (stride * limb.swing).lerp(loose, gait.lift);
     let angle = limb.holds_light.then(|| posed.lerp(-HOLD_ANGLE, hold)).unwrap_or(posed);
     transform.rotation = transform.rotation.slerp(Quat::from_rotation_x(angle), blend);
   }
