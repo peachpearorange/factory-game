@@ -7,6 +7,7 @@ use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_arro
 
 const GRID_HALF: i32 = 10;
 const REACH: f32 = 40.0;
+const DOOM_SWELL: f32 = 1.04;
 
 #[derive(Component)]
 pub struct PlacedMachine {
@@ -17,6 +18,9 @@ pub struct PlacedMachine {
 
 #[derive(Component)]
 struct Ghost;
+
+#[derive(Component)]
+struct Doomed;
 
 fn covered(cell: IVec2, kind: MachineKind, turns: u8) -> impl Iterator<Item = IVec2> {
   let span = kind.span(turns);
@@ -170,6 +174,39 @@ fn update_ghost(
   }
 }
 
+fn mark_doomed(
+  mode: Res<BuildMode>,
+  hovering: Res<UiHover>,
+  spatial: SpatialQuery,
+  assets: Res<MachineAssets>,
+  eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+  window: Single<&Window>,
+  player: Single<Entity, With<Player>>,
+  parents: Query<&ChildOf>,
+  machines: Query<&PlacedMachine>,
+  doomed: Query<Entity, With<Doomed>>,
+  mut commands: Commands
+) {
+  for entity in &doomed {
+    commands.entity(entity).despawn();
+  }
+  let (camera, transform) = *eye;
+  if *mode == BuildMode::Deleting
+    && !hovering.0
+    && let Some(ray) = aim_ray(camera, transform, *window)
+    && let Some(hit) = aimed_entity(&spatial, ray, *player)
+    && let Some(root) = machine_root(hit, &parents, &machines)
+    && let Ok(&PlacedMachine { kind, cell, turns }) = machines.get(root)
+  {
+    commands.spawn((
+      Doomed,
+      Mesh3d(assets.mesh(kind)),
+      MeshMaterial3d(assets.ghost_blocked.clone()),
+      cell_transform(cell, kind, turns).with_scale(Vec3::splat(DOOM_SWELL))
+    ));
+  }
+}
+
 fn place_machine(
   mouse: Res<ButtonInput<MouseButton>>,
   hovering: Res<UiHover>,
@@ -216,14 +253,19 @@ fn take_machine(
   mut mode: ResMut<BuildMode>,
   mut grid: ResMut<BuildGrid>,
   mut inventory: ResMut<Inventory>,
+  mut armed: Local<bool>,
   mut commands: Commands
 ) {
   let (camera, transform) = *eye;
   let grabbing = *mode == BuildMode::Idle;
+  let reaching = grabbing
+    .then(|| mouse.just_pressed(MouseButton::Left))
+    .unwrap_or(mouse.pressed(MouseButton::Left));
+  *armed = (*armed && !mode.is_changed()) || !mouse.pressed(MouseButton::Left);
   if !hovering.0
     && (grabbing || *mode == BuildMode::Deleting)
-    && !mode.is_changed()
-    && mouse.just_pressed(MouseButton::Left)
+    && *armed
+    && reaching
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(hit) = aimed_entity(&spatial, ray, *player)
     && let Some(root) = machine_root(hit, &parents, &machines)
@@ -247,6 +289,8 @@ pub fn plugin(app: &mut App) {
     .init_resource::<Inventory>()
     .add_systems(
       Update,
-      (steer_build, update_ghost, take_machine, place_machine).chain().run_if(playing)
+      (steer_build, update_ghost, mark_doomed, take_machine, place_machine)
+        .chain()
+        .run_if(playing)
     );
 }

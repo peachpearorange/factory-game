@@ -16,6 +16,7 @@ const TAG_RANGE: f32 = 30.0;
 const TAG_LIFT: f32 = 0.62;
 const SOLD_LIFE: f32 = 1.1;
 const SOLD_RISE: f32 = 78.0;
+const DELETE_CURSOR: f32 = 1.7;
 
 #[derive(Component)]
 struct OreMeterFill;
@@ -28,6 +29,9 @@ struct MoneyLabel;
 
 #[derive(Component)]
 struct FpsLabel;
+
+#[derive(Component)]
+struct DeleteCursor;
 
 #[derive(Component)]
 struct Tooltip;
@@ -78,6 +82,13 @@ fn floating(bottom: f32, width: f32) -> impl Bundle {
 }
 
 fn spawn_hud(mut commands: Commands) {
+  commands.spawn((
+    DeleteCursor,
+    Node { position_type: PositionType::Absolute, display: Display::None, ..default() },
+    Pickable::IGNORE,
+    children![icon::scaled(icon::cross(style::DELETE), DELETE_CURSOR)]
+  ));
+
   commands.spawn((
     Node {
       position_type: PositionType::Absolute,
@@ -201,7 +212,7 @@ fn show_mode_hint(
   let message = match *mode {
     BuildMode::Idle => None,
     BuildMode::Placing { .. } => Some("R to rotate     Q to cancel"),
-    BuildMode::Deleting => Some("Click a machine to store it     Q to stop")
+    BuildMode::Deleting => Some("Click or drag to store machines     Q to stop")
   };
   hint.display = message.map(|_| Display::Flex).unwrap_or(Display::None);
   if let Some(line) = message {
@@ -221,6 +232,23 @@ fn update_hint(
   if let Some(info) = shown {
     ***title = info.title.clone();
     ***detail = info.detail.clone();
+  }
+}
+
+fn follow_delete_cursor(
+  mode: Res<BuildMode>,
+  hovering: Res<UiHover>,
+  window: Single<&Window>,
+  mut cursor: Single<&mut Node, With<DeleteCursor>>
+) {
+  let spot = (*mode == BuildMode::Deleting && !hovering.0)
+    .then(|| window.cursor_position())
+    .flatten();
+  cursor.display = spot.map(|_| Display::Flex).unwrap_or(Display::None);
+  if let Some(at) = spot {
+    let half = icon::SIZE * DELETE_CURSOR / 2.0;
+    cursor.left = px(at.x - half);
+    cursor.top = px(at.y - half);
   }
 }
 
@@ -418,6 +446,7 @@ pub fn plugin(app: &mut App) {
         update_fps,
         show_mode_hint,
         update_hint,
+        follow_delete_cursor,
         update_tooltip,
         track_value_tags,
         pop_sold_ores,
