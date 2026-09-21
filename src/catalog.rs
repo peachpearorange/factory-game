@@ -1,9 +1,10 @@
-use {crate::{block::{self, Block},
+use {crate::{block::{self, Block, Form},
              machine::{BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
              ore::{Effects, OreForm},
              sdf, texture},
      avian3d::prelude::*,
-     bevy::{camera::{RenderTarget, visibility::RenderLayers},
+     bevy::{camera::{RenderTarget,
+                     visibility::{NoFrustumCulling, RenderLayers}},
             light::NotShadowCaster,
             math::Affine2,
             prelude::*,
@@ -13,6 +14,7 @@ use {crate::{block::{self, Block},
                    SetAttributeModifier, SetPositionSphereModifier, ShapeDimension,
                    SimulationSpace, SizeOverLifetimeModifier, SpawnerSettings,
                    VectorType},
+     enum_assoc::Assoc,
      fidget::context::Tree,
      std::f32::consts::{FRAC_PI_2, TAU}};
 
@@ -31,8 +33,21 @@ const FURNACE_STACK: f32 = 1.86;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const DROPPER_BACK: f32 = -0.42;
 const CHUTE_FLOOR: f32 = 1.16;
-pub const CHUTE_REACH: f32 = 1.52;
+const CHUTE_REACH: f32 = 1.52;
+const DROP_HEIGHT: f32 = 0.92;
+const CHUTE_SPOUT: Vec3 = Vec3::new(CHUTE_REACH, DROP_HEIGHT, 0.0);
 const COOP_EAVES: f32 = CHUTE_FLOOR + 0.86;
+const MINE_CELLS: i32 = 2;
+const MINE_FACE: f32 = 0.30;
+const MINE_BACK: f32 = -2.0;
+const MINE_CREST: f32 = 2.60;
+const MINE_DECK: f32 = 1.05;
+const MINE_MOUTH: f32 = 1.20;
+const MINE_BORE: f32 = 0.66;
+const MINE_LIP: f32 = 2.45;
+const MINE_TAIL: f32 = -0.20;
+const MINE_HEAD: f32 = 2.40;
+const MINE_SPOUT: Vec3 = Vec3::new(MINE_LIP - 0.12, MINE_DECK - 0.38, 0.0);
 const WASH_BAR: f32 = 1.62;
 const BRUSH_TOP: f32 = 1.30;
 const BRUSH_HALF: f32 = 0.50;
@@ -62,98 +77,256 @@ const GAUGE_GLOW: Color = Color::srgb(1.0, 0.84, 0.36);
 
 const fn belt_half(cells: i32) -> f32 { cells as f32 * CELL / 2.0 - 0.01 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum MachineKind {
-  Conveyor,
-  Dropper,
-  Coop,
-  Furnace,
-  Forge,
-  FlameJet,
-  MistCoil,
-  Orewash,
-  ChillBeam,
-  DecayChamber,
-  Embiggener,
-  Torch,
-  Bonfire,
-  Lamp,
-  Floodlight
-}
-
-struct Finish {
-  roughness: f32,
-  metallic: f32,
-  reflectance: f32
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Assoc)]
+#[func(const fn roughness(self) -> f32)]
+#[func(const fn metallic(self) -> f32)]
+#[func(const fn reflectance(self) -> f32)]
+#[func(const fn tiling(self) -> Option<Vec2>)]
 enum Surface {
+  #[assoc(roughness = 0.6, metallic = 0.35, reflectance = 0.5)]
   Painted,
+  #[assoc(roughness = 0.42, metallic = 0.0, reflectance = 0.38)]
   Plastic,
+  #[assoc(roughness = 0.88, metallic = 0.0, reflectance = 0.14, tiling = texture::GRAIN)]
   Wood,
+  #[assoc(roughness = 0.80, metallic = 0.0, reflectance = 0.20, tiling = texture::PLANK)]
   Planked,
+  #[assoc(roughness = 0.24, metallic = 0.95, reflectance = 0.72)]
   Metal
 }
 
-impl Surface {
-  const fn finish(self) -> Finish {
-    match self {
-      Self::Painted => Finish { roughness: 0.6, metallic: 0.35, reflectance: 0.5 },
-      Self::Plastic => Finish { roughness: 0.42, metallic: 0.0, reflectance: 0.38 },
-      Self::Wood => Finish { roughness: 0.88, metallic: 0.0, reflectance: 0.14 },
-      Self::Planked => Finish { roughness: 0.80, metallic: 0.0, reflectance: 0.20 },
-      Self::Metal => Finish { roughness: 0.24, metallic: 0.95, reflectance: 0.72 }
-    }
-  }
-
-  const fn tiling(self) -> Option<Vec2> {
-    match self {
-      Self::Wood => Some(texture::GRAIN),
-      Self::Planked => Some(texture::PLANK),
-      _ => None
-    }
-  }
-}
-
-pub struct MachineSpec {
-  pub name: &'static str,
-  pub blurb: &'static str,
-  pub price: f32,
-  pub tier: Tier,
-  pub unlock: Option<&'static str>
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Assoc)]
+#[func(pub const fn swatch(self) -> Color)]
 pub enum Tier {
+  #[assoc(swatch = Color::srgb(0.91, 0.91, 0.92))]
   Plain,
+  #[assoc(swatch = Color::srgb(0.75, 0.86, 0.96))]
   Sturdy,
+  #[assoc(swatch = Color::srgb(0.71, 0.93, 0.74))]
   Refined,
+  #[assoc(swatch = Color::srgb(0.99, 0.87, 0.55))]
   Exotic,
+  #[assoc(swatch = Color::srgb(0.93, 0.72, 0.97))]
   Mythic
 }
 
-impl Tier {
-  pub const fn swatch(self) -> Color {
-    match self {
-      Self::Plain => Color::srgb(0.91, 0.91, 0.92),
-      Self::Sturdy => Color::srgb(0.75, 0.86, 0.96),
-      Self::Refined => Color::srgb(0.71, 0.93, 0.74),
-      Self::Exotic => Color::srgb(0.99, 0.87, 0.55),
-      Self::Mythic => Color::srgb(0.93, 0.72, 0.97)
-    }
-  }
+const fn stamps(multiplier: f32, effects: Effects) -> Upgrader {
+  Upgrader { multiplier, effects, growth: 1.0 }
 }
 
-const fn stamps(multiplier: f32, effects: Effects) -> Option<Upgrader> {
-  Some(Upgrader { multiplier, effects, growth: 1.0 })
+fn drops(every: f32, value: f32, form: OreForm, spout: Vec3) -> Dropper {
+  Dropper { timer: Timer::from_seconds(every, TimerMode::Repeating), value, form, spout }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Assoc)]
+#[func(pub const fn name(self) -> &'static str)]
+#[func(pub const fn blurb(self) -> &'static str)]
+#[func(pub const fn price(self) -> f32)]
+#[func(pub const fn tier(self) -> Tier)]
+#[func(pub const fn unlock(self) -> Option<&'static str>)]
+#[func(pub const fn footprint(self) -> IVec2 { IVec2::ONE })]
+#[func(pub const fn carries_belt(self) -> bool { false })]
+#[func(pub const fn upgrade(self) -> Option<Upgrader>)]
+#[func(const fn preview_spin(self) -> f32 { -0.6 })]
+#[func(const fn surface(self) -> Surface { Surface::Painted })]
+#[func(const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba>)]
+#[func(fn shape(self) -> Tree { arch() })]
+#[func(fn blocks(self) -> Option<Vec<Block>>)]
+#[func(fn dropper(self) -> Option<Dropper>)]
+#[func(fn model(self) -> Mesh {
+  self.blocks().map(block::assembled).unwrap_or_else(|| {
+    self
+      .paint()
+      .map(|paint| sdf::bake_painted(self.shape(), machine_bounds(self), paint))
+      .unwrap_or_else(|| sdf::bake(self.shape(), machine_bounds(self)))
+  })
+})]
+#[func(const fn accent(self) -> Color { Color::WHITE })]
+#[func(const fn glow(self) -> LinearRgba { LinearRgba::BLACK })]
+pub enum MachineKind {
+  #[assoc(
+    name = "Conveyor",
+    blurb = "Carries ore one cell onward. Everything is downstream of something.",
+    price = 25.0,
+    tier = Tier::Plain,
+    carries_belt = true,
+    accent = Color::srgb(0.30, 0.31, 0.34),
+    shape = belt_deck(belt_half(1))
+  )]
+  Conveyor,
+  #[assoc(
+    name = "Ore Dropper",
+    blurb = "Coughs up a lump of rock every so often. Aim it at a belt.",
+    price = 150.0,
+    tier = Tier::Plain,
+    paint = dropper_paint,
+    shape = dropper_body(),
+    dropper = drops(3.0, 12.0, OreForm::Rock, CHUTE_SPOUT)
+  )]
+  Dropper,
+  #[assoc(
+    name = "Chicken Coop",
+    blurb = "A hen broods in the nest box and rolls a fresh egg down the ramp.",
+    price = 110.0,
+    tier = Tier::Plain,
+    surface = Surface::Planked,
+    model = coop_mesh(),
+    blocks = coop_blocks().map(Block::solid).collect(),
+    dropper = drops(4.2, 6.0, OreForm::Egg, CHUTE_SPOUT)
+  )]
+  Coop,
+  #[assoc(
+    name = "Gold Mine",
+    blurb = "A shaft cut into a hill of gold-veined rock. Carts trundle out along \
+             the trestle and tip a nugget off the end.",
+    price = 2400.0,
+    tier = Tier::Exotic,
+    footprint = IVec2::splat(MINE_CELLS),
+    blocks = gold_mine_blocks().collect(),
+    dropper = drops(5.0, 95.0, OreForm::Nugget, MINE_SPOUT)
+  )]
+  GoldMine,
+  #[assoc(
+    name = "Furnace",
+    blurb = "Swallows whatever reaches it and pays out its value.",
+    price = 250.0,
+    tier = Tier::Sturdy,
+    preview_spin = 2.3,
+    blocks = hearth_blocks().collect()
+  )]
+  Furnace,
+  #[assoc(
+    name = "Flame Forge",
+    blurb = "Sets passing ore alight and multiplies what it is worth.",
+    price = 400.0,
+    tier = Tier::Refined,
+    carries_belt = true,
+    upgrade = stamps(2.5, Effects::FIERY),
+    accent = Color::srgb(0.44, 0.24, 0.18),
+    glow = LinearRgba::rgb(0.85, 0.22, 0.03)
+  )]
+  Forge,
+  #[assoc(
+    name = "Flame Jet",
+    blurb = "Blasts a lance of fire across the belt. Whatever passes comes out burning.",
+    price = 620.0,
+    tier = Tier::Refined,
+    carries_belt = true,
+    upgrade = stamps(3.2, Effects::FIERY),
+    surface = Surface::Metal,
+    accent = Color::srgb(0.46, 0.47, 0.50),
+    shape = jet_nozzle()
+  )]
+  FlameJet,
+  #[assoc(
+    name = "Mist Coil",
+    blurb = "Soaks ore through. Wet things carry charge differently.",
+    price = 900.0,
+    tier = Tier::Exotic,
+    unlock = "Burn an ore worth over $500",
+    carries_belt = true,
+    upgrade = stamps(4.0, Effects::WET),
+    accent = Color::srgb(0.22, 0.34, 0.48),
+    glow = LinearRgba::rgb(0.06, 0.40, 0.85)
+  )]
+  MistCoil,
+  #[assoc(
+    name = "The Orewash",
+    blurb = "Your ores need to be at the orewash to wash them.",
+    price = 700.0,
+    tier = Tier::Refined,
+    carries_belt = true,
+    upgrade = stamps(3.0, Effects::WET),
+    surface = Surface::Plastic,
+    paint = orewash_paint,
+    shape = orewash_tunnel()
+  )]
+  Orewash,
+  #[assoc(
+    name = "Chill Beam",
+    blurb = "A long frost gantry. The beam rimes whatever crawls beneath it.",
+    price = 1500.0,
+    tier = Tier::Exotic,
+    footprint = IVec2::new(CHILL_CELLS, 1),
+    carries_belt = true,
+    upgrade = stamps(5.0, Effects::FROSTY),
+    surface = Surface::Plastic,
+    paint = chill_paint,
+    shape = chill_gantry()
+  )]
+  ChillBeam,
+  #[assoc(
+    name = "Decay Chamber",
+    blurb = "Leaves ore humming and faintly green for a very long time.",
+    price = 2200.0,
+    tier = Tier::Mythic,
+    unlock = "Burn 250 ore",
+    carries_belt = true,
+    upgrade = stamps(9.0, Effects::RADIOACTIVE),
+    accent = Color::srgb(0.24, 0.40, 0.22),
+    glow = LinearRgba::rgb(0.10, 0.85, 0.12)
+  )]
+  DecayChamber,
+  #[assoc(
+    name = "The Embiggener",
+    blurb = "Ore goes in, a bigger ore comes out. A perfectly cromulent way to \
+             raise its worth. The gates are solid, so an ore that has already \
+             grown twice will not fit through the inlet.",
+    price = 1100.0,
+    tier = Tier::Exotic,
+    carries_belt = true,
+    upgrade = Upgrader { multiplier: 2.0, effects: Effects::NONE, growth: 1.35 },
+    surface = Surface::Metal,
+    paint = embiggener_paint,
+    shape = embiggener_frame()
+  )]
+  Embiggener,
+  #[assoc(
+    name = "Torch",
+    blurb = "A burning brand on a stake. Keeps the dark off a corner of the floor.",
+    price = 40.0,
+    tier = Tier::Plain,
+    surface = Surface::Wood,
+    shape = torch_post()
+  )]
+  Torch,
+  #[assoc(
+    name = "Bonfire",
+    blurb = "A stacked heap of branches, well alight. Warms a wide stretch of floor.",
+    price = 120.0,
+    tier = Tier::Plain,
+    surface = Surface::Wood,
+    shape = bonfire_pile()
+  )]
+  Bonfire,
+  #[assoc(
+    name = "Lamp Post",
+    blurb = "Angles a tight beam across the floor. Rotate it to aim where you want.",
+    price = 180.0,
+    tier = Tier::Sturdy,
+    surface = Surface::Metal,
+    accent = Color::srgb(0.62, 0.64, 0.68),
+    shape = lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT)
+  )]
+  Lamp,
+  #[assoc(
+    name = "Floodlight",
+    blurb = "A taller mast with a wide, hard beam. Lights a whole bank of machines.",
+    price = 520.0,
+    tier = Tier::Refined,
+    surface = Surface::Metal,
+    paint = floodlight_paint,
+    shape = flood_mast()
+  )]
+  Floodlight
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 15] = [
+  pub const ALL: [Self; 16] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Coop,
+    Self::GoldMine,
     Self::Furnace,
     Self::Forge,
     Self::FlameJet,
@@ -171,209 +344,11 @@ impl MachineKind {
 
   pub const fn index(self) -> usize { self as usize }
 
-  pub const fn carries_belt(self) -> bool {
-    matches!(
-      self,
-      Self::Conveyor
-        | Self::Forge
-        | Self::FlameJet
-        | Self::MistCoil
-        | Self::Orewash
-        | Self::ChillBeam
-        | Self::DecayChamber
-        | Self::Embiggener
-    )
-  }
-
-  pub const fn footprint(self) -> IVec2 {
-    match self {
-      Self::ChillBeam => IVec2::new(CHILL_CELLS, 1),
-      _ => IVec2::ONE
-    }
-  }
-
   pub const fn span(self, turns: u8) -> IVec2 {
     let footprint = self.footprint();
     match turns % 2 {
       0 => footprint,
       _ => IVec2::new(footprint.y, footprint.x)
-    }
-  }
-
-  pub const fn spec(self) -> MachineSpec {
-    match self {
-      Self::Conveyor => MachineSpec {
-        name: "Conveyor",
-        blurb: "Carries ore one cell onward. Everything is downstream of something.",
-        price: 25.0,
-        tier: Tier::Plain,
-        unlock: None
-      },
-      Self::Dropper => MachineSpec {
-        name: "Ore Dropper",
-        blurb: "Coughs up a lump of rock every so often. Aim it at a belt.",
-        price: 150.0,
-        tier: Tier::Plain,
-        unlock: None
-      },
-      Self::Coop => MachineSpec {
-        name: "Chicken Coop",
-        blurb: "A hen broods in the nest box and rolls a fresh egg down the ramp.",
-        price: 110.0,
-        tier: Tier::Plain,
-        unlock: None
-      },
-      Self::Forge => MachineSpec {
-        name: "Flame Forge",
-        blurb: "Sets passing ore alight and multiplies what it is worth.",
-        price: 400.0,
-        tier: Tier::Refined,
-        unlock: None
-      },
-      Self::Furnace => MachineSpec {
-        name: "Furnace",
-        blurb: "Swallows whatever reaches it and pays out its value.",
-        price: 250.0,
-        tier: Tier::Sturdy,
-        unlock: None
-      },
-      Self::FlameJet => MachineSpec {
-        name: "Flame Jet",
-        blurb: "Blasts a lance of fire across the belt. Whatever passes comes out burning.",
-        price: 620.0,
-        tier: Tier::Refined,
-        unlock: None
-      },
-      Self::MistCoil => MachineSpec {
-        name: "Mist Coil",
-        blurb: "Soaks ore through. Wet things carry charge differently.",
-        price: 900.0,
-        tier: Tier::Exotic,
-        unlock: Some("Burn an ore worth over $500")
-      },
-      Self::Orewash => MachineSpec {
-        name: "The Orewash",
-        blurb: "Your ores need to be at the orewash to wash them.",
-        price: 700.0,
-        tier: Tier::Refined,
-        unlock: None
-      },
-      Self::ChillBeam => MachineSpec {
-        name: "Chill Beam",
-        blurb: "A long frost gantry. The beam rimes whatever crawls beneath it.",
-        price: 1500.0,
-        tier: Tier::Exotic,
-        unlock: None
-      },
-      Self::DecayChamber => MachineSpec {
-        name: "Decay Chamber",
-        blurb: "Leaves ore humming and faintly green for a very long time.",
-        price: 2200.0,
-        tier: Tier::Mythic,
-        unlock: Some("Burn 250 ore")
-      },
-      Self::Embiggener => MachineSpec {
-        name: "The Embiggener",
-        blurb: "Ore goes in, a bigger ore comes out. A perfectly cromulent way to \
-                raise its worth. The gates are solid, so an ore that has already \
-                grown twice will not fit through the inlet.",
-        price: 1100.0,
-        tier: Tier::Exotic,
-        unlock: None
-      },
-      Self::Torch => MachineSpec {
-        name: "Torch",
-        blurb: "A burning brand on a stake. Keeps the dark off a corner of the floor.",
-        price: 40.0,
-        tier: Tier::Plain,
-        unlock: None
-      },
-      Self::Bonfire => MachineSpec {
-        name: "Bonfire",
-        blurb: "A stacked heap of branches, well alight. Warms a wide stretch of floor.",
-        price: 120.0,
-        tier: Tier::Plain,
-        unlock: None
-      },
-      Self::Lamp => MachineSpec {
-        name: "Lamp Post",
-        blurb: "Angles a tight beam across the floor. Rotate it to aim where you want.",
-        price: 180.0,
-        tier: Tier::Sturdy,
-        unlock: None
-      },
-      Self::Floodlight => MachineSpec {
-        name: "Floodlight",
-        blurb: "A taller mast with a wide, hard beam. Lights a whole bank of machines.",
-        price: 520.0,
-        tier: Tier::Refined,
-        unlock: None
-      }
-    }
-  }
-
-  pub const fn upgrade(self) -> Option<Upgrader> {
-    match self {
-      Self::Forge => stamps(2.5, Effects::FIERY),
-      Self::FlameJet => stamps(3.2, Effects::FIERY),
-      Self::MistCoil => stamps(4.0, Effects::WET),
-      Self::Orewash => stamps(3.0, Effects::WET),
-      Self::ChillBeam => stamps(5.0, Effects::FROSTY),
-      Self::DecayChamber => stamps(9.0, Effects::RADIOACTIVE),
-      Self::Embiggener => {
-        Some(Upgrader { multiplier: 2.0, effects: Effects::NONE, growth: 1.35 })
-      }
-      _ => None
-    }
-  }
-
-  const fn preview_spin(self) -> f32 {
-    match self {
-      Self::Furnace => 2.3,
-      _ => -0.6
-    }
-  }
-
-  const fn surface(self) -> Surface {
-    match self {
-      Self::Orewash => Surface::Plastic,
-      Self::Torch | Self::Bonfire => Surface::Wood,
-      Self::Coop => Surface::Planked,
-      Self::Lamp | Self::Floodlight | Self::FlameJet | Self::Embiggener => Surface::Metal,
-      Self::ChillBeam => Surface::Plastic,
-      _ => Surface::Painted
-    }
-  }
-
-  const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba> {
-    match self {
-      Self::Dropper => Some(dropper_paint),
-      Self::Orewash => Some(orewash_paint),
-      Self::ChillBeam => Some(chill_paint),
-      Self::Embiggener => Some(embiggener_paint),
-      Self::Floodlight => Some(floodlight_paint),
-      _ => None
-    }
-  }
-
-  fn accent(self) -> (Color, LinearRgba) {
-    match self {
-      Self::Conveyor => (Color::srgb(0.30, 0.31, 0.34), LinearRgba::BLACK),
-      Self::Dropper | Self::Coop => (Color::WHITE, LinearRgba::BLACK),
-      Self::Forge => (Color::srgb(0.44, 0.24, 0.18), LinearRgba::rgb(0.85, 0.22, 0.03)),
-      Self::FlameJet => (Color::srgb(0.46, 0.47, 0.50), LinearRgba::BLACK),
-      Self::Furnace => (Color::WHITE, LinearRgba::BLACK),
-      Self::MistCoil => {
-        (Color::srgb(0.22, 0.34, 0.48), LinearRgba::rgb(0.06, 0.40, 0.85))
-      }
-      Self::Orewash | Self::ChillBeam => (Color::WHITE, LinearRgba::BLACK),
-      Self::DecayChamber => {
-        (Color::srgb(0.24, 0.40, 0.22), LinearRgba::rgb(0.10, 0.85, 0.12))
-      }
-      Self::Embiggener => (Color::WHITE, LinearRgba::BLACK),
-      Self::Torch | Self::Bonfire => (Color::WHITE, LinearRgba::BLACK),
-      Self::Lamp => (Color::srgb(0.62, 0.64, 0.68), LinearRgba::BLACK),
-      Self::Floodlight => (Color::WHITE, LinearRgba::BLACK)
     }
   }
 }
@@ -674,6 +649,190 @@ fn coop_mesh() -> Mesh {
   )
 }
 
+const STONE: LinearRgba = LinearRgba::rgb(0.35, 0.33, 0.31);
+const SEAM: LinearRgba = LinearRgba::rgb(0.96, 0.74, 0.16);
+const DARK: LinearRgba = LinearRgba::rgb(0.06, 0.05, 0.05);
+const STEEL: LinearRgba = LinearRgba::rgb(0.44, 0.46, 0.50);
+const MINE_FLANK: f32 = (1.95 - MINE_BORE) / 2.0;
+const MINE_ROOF: f32 = MINE_DECK + MINE_MOUTH;
+
+fn gold_mine_blocks() -> impl Iterator<Item = Block> {
+  let deck_half = (MINE_LIP - MINE_TAIL) / 2.0;
+  let deck_at = (MINE_LIP + MINE_TAIL) / 2.0;
+  let bore_half = (MINE_FACE - MINE_BACK) / 2.0 - 0.425;
+  let bore_at = MINE_FACE - bore_half;
+
+  let flank = |side: f32| {
+    Block::new(
+      Vec3::new((MINE_FACE - MINE_BACK) / 2.0, MINE_CREST / 2.0, MINE_FLANK),
+      Vec3::new(
+        (MINE_FACE + MINE_BACK) / 2.0,
+        MINE_CREST / 2.0,
+        side * (MINE_BORE + MINE_FLANK)
+      ),
+      STONE
+    )
+    .solid()
+  };
+  let boulder = |side: f32, girth: f32| {
+    Block::new(Vec3::splat(girth), Vec3::new(0.56, girth * 0.78, side * 1.42), STONE)
+      .shaped(Form::Ball)
+      .solid()
+  };
+  let seam = |half: Vec3, at: Vec3| Block::new(half, at, SEAM);
+  let face_seam = |rise: f32, across: f32, reach: f32| {
+    seam(Vec3::new(0.02, 0.07, reach), Vec3::new(MINE_FACE + 0.02, rise, across))
+  };
+  let side_seam = |side: f32, rise: f32, along: f32, reach: f32| {
+    seam(Vec3::new(reach, 0.06, 0.02), Vec3::new(along, rise, side * 1.97))
+  };
+
+  let leg = |along: f32, side: f32| {
+    Block::new(
+      Vec3::new(0.08, MINE_DECK / 2.0, 0.08),
+      Vec3::new(along, MINE_DECK / 2.0, side * 0.56),
+      TIMBER
+    )
+    .solid()
+  };
+  let kerb = |side: f32| {
+    Block::new(
+      Vec3::new(deck_half, 0.07, 0.06),
+      Vec3::new(deck_at, MINE_DECK + 0.07, side * 0.56),
+      TIMBER
+    )
+  };
+  let rail = |side: f32| {
+    Block::new(
+      Vec3::new(deck_half, 0.04, 0.05),
+      Vec3::new(deck_at, MINE_DECK + 0.04, side * 0.24),
+      STEEL
+    )
+  };
+  let sleeper = |step: usize| {
+    Block::new(
+      Vec3::new(0.07, 0.03, 0.38),
+      Vec3::new(MINE_TAIL + 0.35 + step as f32 * 0.52, MINE_DECK + 0.03, 0.0),
+      TIMBER
+    )
+  };
+  let mast = |along: f32, side: f32| {
+    Block::new(
+      Vec3::new(0.07, (MINE_HEAD - MINE_DECK) / 2.0, 0.07),
+      Vec3::new(along, (MINE_HEAD + MINE_DECK) / 2.0, side * 0.62),
+      TIMBER
+    )
+    .solid()
+  };
+  let brace = |side: f32| {
+    Block::new(
+      Vec3::new(0.70, 0.07, 0.07),
+      Vec3::new(1.35, MINE_HEAD, side * 0.62),
+      TIMBER
+    )
+  };
+  let yoke = |along: f32| {
+    Block::new(Vec3::new(0.07, 0.07, 0.62), Vec3::new(along, MINE_HEAD, 0.0), TIMBER)
+  };
+  let jamb = |side: f32| {
+    Block::new(
+      Vec3::new(0.10, MINE_MOUTH / 2.0, 0.09),
+      Vec3::new(MINE_FACE, MINE_DECK + MINE_MOUTH / 2.0, side * (MINE_BORE + 0.09)),
+      TIMBER
+    )
+    .solid()
+  };
+
+  [
+    flank(1.0),
+    flank(-1.0),
+    Block::new(
+      Vec3::new(0.425, MINE_CREST / 2.0, 1.95),
+      Vec3::new(MINE_BACK + 0.425, MINE_CREST / 2.0, 0.0),
+      STONE
+    )
+    .solid(),
+    Block::new(
+      Vec3::new(bore_half, (MINE_CREST - MINE_ROOF) / 2.0, MINE_BORE),
+      Vec3::new(bore_at, (MINE_CREST + MINE_ROOF) / 2.0, 0.0),
+      STONE
+    )
+    .solid(),
+    Block::new(
+      Vec3::new(bore_half, MINE_DECK / 2.0, MINE_BORE),
+      Vec3::new(bore_at, MINE_DECK / 2.0, 0.0),
+      STONE
+    )
+    .solid(),
+    Block::new(
+      Vec3::new(0.03, MINE_MOUTH / 2.0, MINE_BORE),
+      Vec3::new(bore_at - bore_half + 0.03, MINE_DECK + MINE_MOUTH / 2.0, 0.0),
+      DARK
+    ),
+    Block::new(
+      Vec3::new(0.85, 0.35, 1.45),
+      Vec3::new(-1.15, MINE_CREST + 0.35, 0.0),
+      STONE
+    )
+    .solid(),
+    Block::new(
+      Vec3::new(0.45, 0.28, 0.80),
+      Vec3::new(-1.40, MINE_CREST + 0.98, 0.0),
+      STONE
+    )
+    .solid(),
+    boulder(1.0, 0.52),
+    boulder(-1.0, 0.44),
+    face_seam(1.92, 1.24, 0.46),
+    face_seam(0.74, -1.30, 0.38),
+    face_seam(2.34, -0.95, 0.30),
+    side_seam(1.0, 1.55, -0.60, 0.52),
+    side_seam(1.0, 0.62, -1.45, 0.34),
+    side_seam(-1.0, 2.05, -1.10, 0.44),
+    side_seam(-1.0, 1.02, -0.35, 0.30),
+    seam(Vec3::new(0.30, 0.02, 0.36), Vec3::new(-1.30, MINE_CREST + 0.72, 0.30)),
+    seam(Vec3::new(0.24, 0.02, 0.30), Vec3::new(-0.55, MINE_CREST + 0.02, -0.80)),
+    Block::new(
+      Vec3::new(deck_half, 0.06, 0.62),
+      Vec3::new(deck_at, MINE_DECK - 0.06, 0.0),
+      TIMBER
+    )
+    .solid(),
+    kerb(1.0),
+    kerb(-1.0),
+    rail(1.0),
+    rail(-1.0),
+    leg(0.75, 1.0),
+    leg(0.75, -1.0),
+    leg(2.15, 1.0),
+    leg(2.15, -1.0),
+    mast(0.65, 1.0),
+    mast(0.65, -1.0),
+    mast(2.05, 1.0),
+    mast(2.05, -1.0),
+    brace(1.0),
+    brace(-1.0),
+    yoke(0.65),
+    yoke(2.05),
+    Block::new(
+      Vec3::new(0.24, 0.06, 0.24),
+      Vec3::new(1.35, MINE_HEAD - 0.24, 0.0),
+      STEEL
+    )
+    .shaped(Form::Pillar)
+    .rolled(FRAC_PI_2),
+    jamb(1.0),
+    jamb(-1.0),
+    Block::new(
+      Vec3::new(0.10, 0.11, MINE_BORE + 0.20),
+      Vec3::new(MINE_FACE, MINE_ROOF + 0.11, 0.0),
+      TIMBER
+    )
+  ]
+  .into_iter()
+  .chain((0..5).map(sleeper))
+}
+
 const IRON: LinearRgba = LinearRgba::rgb(0.30, 0.31, 0.34);
 const SOOT: LinearRgba = LinearRgba::rgb(0.11, 0.11, 0.12);
 const BRASS: LinearRgba = LinearRgba::rgb(0.74, 0.55, 0.20);
@@ -703,7 +862,8 @@ fn hearth_blocks() -> impl Iterator<Item = Block> {
       Vec3::new(HEARTH_HALF, HEARTH_PAN / 2.0, HEARTH_HALF),
       Vec3::new(0.0, HEARTH_PAN / 2.0, 0.0),
       SOOT
-    ),
+    )
+    .solid(),
     Block::new(
       Vec3::new(HEARTH_HALF - HEARTH_WALL, 0.03, HEARTH_HALF - HEARTH_WALL),
       Vec3::new(0.0, HEARTH_PAN + 0.03, 0.0),
@@ -713,7 +873,8 @@ fn hearth_blocks() -> impl Iterator<Item = Block> {
       Vec3::new(HEARTH_WALL, (HEARTH_BACK - HEARTH_PAN) / 2.0, HEARTH_HALF),
       Vec3::new(HEARTH_HALF - HEARTH_WALL, (HEARTH_BACK + HEARTH_PAN) / 2.0, 0.0),
       IRON
-    ),
+    )
+    .solid(),
     Block::new(
       Vec3::new(HEARTH_WALL, 0.04, HEARTH_HALF),
       Vec3::new(HEARTH_HALF - HEARTH_WALL, HEARTH_BACK + 0.04, 0.0),
@@ -723,7 +884,8 @@ fn hearth_blocks() -> impl Iterator<Item = Block> {
       Vec3::new(HEARTH_WALL, HEARTH_LIP / 2.0, HEARTH_HALF),
       Vec3::new(HEARTH_WALL - HEARTH_HALF, HEARTH_LIP / 2.0, 0.0),
       BRASS
-    ),
+    )
+    .solid(),
     Block::new(
       Vec3::new(0.18, (FURNACE_STACK - HEARTH_BACK) / 2.0, 0.18),
       Vec3::new(HEARTH_HALF - 0.30, (FURNACE_STACK + HEARTH_BACK) / 2.0, 0.0),
@@ -1222,36 +1384,6 @@ impl MachineAssets {
   pub fn mesh(&self, kind: MachineKind) -> Handle<Mesh> {
     self.meshes[kind.index()].clone()
   }
-
-  fn baked(kind: MachineKind) -> Mesh {
-    match kind {
-      MachineKind::Coop => Some(coop_mesh()),
-      MachineKind::Furnace => Some(block::assembled(hearth_blocks())),
-      _ => None
-    }
-    .unwrap_or_else(|| {
-      kind
-        .paint()
-        .map(|paint| sdf::bake_painted(Self::shape(kind), machine_bounds(kind), paint))
-        .unwrap_or_else(|| sdf::bake(Self::shape(kind), machine_bounds(kind)))
-    })
-  }
-
-  fn shape(kind: MachineKind) -> Tree {
-    match kind {
-      MachineKind::Conveyor => belt_deck(belt_half(1)),
-      MachineKind::Dropper => dropper_body(),
-      MachineKind::Embiggener => embiggener_frame(),
-      MachineKind::FlameJet => jet_nozzle(),
-      MachineKind::Orewash => orewash_tunnel(),
-      MachineKind::ChillBeam => chill_gantry(),
-      MachineKind::Torch => torch_post(),
-      MachineKind::Bonfire => bonfire_pile(),
-      MachineKind::Lamp => lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT),
-      MachineKind::Floodlight => flood_mast(),
-      _ => arch()
-    }
-  }
 }
 
 #[derive(Component)]
@@ -1292,25 +1424,22 @@ fn load_machine_assets(
     ..default()
   };
 
-  let machine_meshes =
-    MachineKind::ALL.map(|kind| meshes.add(MachineAssets::baked(kind)));
+  let machine_meshes = MachineKind::ALL.map(|kind| meshes.add(kind.model()));
   let grain = images.add(texture::wood());
   let boards = images.add(texture::planks());
   let machine_materials = MachineKind::ALL.map(|kind| {
-    let (base_color, emissive) = kind.accent();
     let surface = kind.surface();
-    let Finish { roughness, metallic, reflectance } = surface.finish();
     let tiling = surface.tiling().unwrap_or(Vec2::ONE);
     materials.add(StandardMaterial {
-      base_color,
-      emissive,
+      base_color: kind.accent(),
+      emissive: kind.glow(),
       base_color_texture: (surface == Surface::Wood)
         .then(|| grain.clone())
         .or_else(|| (surface == Surface::Planked).then(|| boards.clone())),
       uv_transform: Affine2::from_scale(Vec2::ONE / tiling),
-      perceptual_roughness: roughness,
-      reflectance,
-      metallic,
+      perceptual_roughness: surface.roughness(),
+      reflectance: surface.reflectance(),
+      metallic: surface.metallic(),
       ..default()
     })
   });
@@ -1488,7 +1617,7 @@ pub fn place(
 ) -> Entity {
   let root = commands
     .spawn((
-      Name::new(kind.spec().name),
+      Name::new(kind.name()),
       RigidBody::Static,
       Mesh3d(assets.mesh(kind)),
       MeshMaterial3d(assets.materials[kind.index()].clone()),
@@ -1496,18 +1625,28 @@ pub fn place(
     ))
     .id();
 
-  let mut parts: Vec<(Collider, Transform)> = Vec::new();
+  let bolt = |commands: &mut Commands, collider: Collider, at: Transform| {
+    commands.spawn((collider, at, ChildOf(root)));
+  };
+  for (collider, at) in block::colliders(kind.blocks().unwrap_or_default()) {
+    bolt(commands, collider, at);
+  }
+  if let Some(dropper) = kind.dropper() {
+    commands.entity(root).insert(dropper);
+  }
 
   match kind {
     MachineKind::Dropper => {
-      parts.push((
+      bolt(
+        commands,
         Collider::cuboid(0.9, 1.5, 0.9),
         Transform::from_xyz(DROPPER_BACK, 0.75, 0.0)
-      ));
-      parts.push((
+      );
+      bolt(
+        commands,
         Collider::cuboid(1.3, 1.1, 1.3),
         Transform::from_xyz(DROPPER_BACK, 1.78, 0.0)
-      ));
+      );
       commands.spawn((
         Mesh3d(assets.chute_mesh.clone()),
         MeshMaterial3d(assets.chute_material.clone()),
@@ -1515,59 +1654,8 @@ pub fn place(
         Transform::from_xyz(CHUTE_REACH / 2.0 - 0.14, CHUTE_FLOOR + 0.22, 0.0),
         ChildOf(root)
       ));
-      commands.entity(root).insert(Dropper {
-        timer: Timer::from_seconds(1.6, TimerMode::Repeating),
-        value: 12.0,
-        form: OreForm::Rock
-      });
-    }
-    MachineKind::Coop => {
-      parts.push((
-        Collider::cuboid(1.3, CHUTE_FLOOR + 1.0, 1.3),
-        Transform::from_xyz(DROPPER_BACK, (CHUTE_FLOOR + 1.0) / 2.0, 0.0)
-      ));
-      parts.push((
-        Collider::cuboid(CHUTE_REACH, 0.14, 0.68),
-        Transform::from_xyz(CHUTE_REACH / 2.0, CHUTE_FLOOR, 0.0)
-      ));
-      commands.entity(root).insert(Dropper {
-        timer: Timer::from_seconds(2.2, TimerMode::Repeating),
-        value: 6.0,
-        form: OreForm::Egg
-      });
     }
     MachineKind::Furnace => {
-      let wall = |along: f32, across: f32, half: Vec3| {
-        (
-          Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0),
-          Transform::from_xyz(
-            along * (HEARTH_HALF - half.x),
-            HEARTH_PAN + half.y,
-            across * (HEARTH_HALF - half.z)
-          )
-        )
-      };
-      parts.push((
-        Collider::cuboid(HEARTH_HALF * 2.0, HEARTH_PAN, HEARTH_HALF * 2.0),
-        Transform::from_xyz(0.0, HEARTH_PAN / 2.0, 0.0)
-      ));
-      parts.push(wall(
-        1.0,
-        0.0,
-        Vec3::new(HEARTH_WALL, (HEARTH_BACK - HEARTH_PAN) / 2.0, HEARTH_HALF)
-      ));
-      parts.push(wall(
-        -1.0,
-        0.0,
-        Vec3::new(HEARTH_WALL, (HEARTH_LIP - HEARTH_PAN).max(0.02) / 2.0, HEARTH_HALF)
-      ));
-      for across in [-1.0, 1.0] {
-        parts.push(wall(
-          0.0,
-          across,
-          Vec3::new(HEARTH_HALF, (HEARTH_RIM - HEARTH_PAN) / 2.0, HEARTH_WALL)
-        ));
-      }
       commands.spawn((
         Furnace,
         Collider::cuboid(
@@ -1580,16 +1668,18 @@ pub fn place(
         Mesh3d(assets.coals_mesh.clone()),
         MeshMaterial3d(assets.coals_glow.clone()),
         NotShadowCaster,
+        NoFrustumCulling,
         PointLight { color: EMBER_GLOW, intensity: 420_000.0, range: 14.0, ..default() },
         Transform::from_xyz(0.0, HEARTH_COALS, 0.0),
         ChildOf(root)
       ));
     }
     MachineKind::Bonfire => {
-      parts.push((
+      bolt(
+        commands,
         Collider::cylinder(0.62, BONFIRE_TOP),
         Transform::from_xyz(0.0, BONFIRE_TOP / 2.0, 0.0)
-      ));
+      );
       commands.spawn((
         PointLight {
           color: TORCH_GLOW,
@@ -1600,6 +1690,7 @@ pub fn place(
         Mesh3d(assets.glow_mesh.clone()),
         MeshMaterial3d(assets.torch_glow.clone()),
         NotShadowCaster,
+        NoFrustumCulling,
         Transform::from_xyz(0.0, BONFIRE_TOP * 0.7, 0.0).with_scale(Vec3::splat(0.26)),
         ChildOf(root)
       ));
@@ -1610,10 +1701,11 @@ pub fn place(
       ));
     }
     MachineKind::Torch => {
-      parts.push((
+      bolt(
+        commands,
         Collider::cylinder(0.2, TORCH_HEAD + 0.3),
         Transform::from_xyz(0.0, (TORCH_HEAD + 0.3) / 2.0, 0.0)
-      ));
+      );
       commands.spawn((
         PointLight {
           color: TORCH_GLOW,
@@ -1624,6 +1716,7 @@ pub fn place(
         Mesh3d(assets.glow_mesh.clone()),
         MeshMaterial3d(assets.torch_glow.clone()),
         NotShadowCaster,
+        NoFrustumCulling,
         Transform::from_xyz(0.0, TORCH_HEAD + 0.2, 0.0)
           .with_scale(Vec3::new(0.11, 0.15, 0.11)),
         ChildOf(root)
@@ -1636,10 +1729,11 @@ pub fn place(
     }
     MachineKind::Floodlight => {
       let beam = Vec3::new(FLOOD_TILT.sin(), -FLOOD_TILT.cos(), 0.0);
-      parts.push((
+      bolt(
+        commands,
         Collider::cuboid(0.7, FLOOD_HEIGHT + 0.6, FLOOD_SPAN * 2.0 + 0.6),
         Transform::from_xyz(0.0, (FLOOD_HEIGHT + 0.6) / 2.0, 0.0)
-      ));
+      );
       commands.spawn((
         SpotLight {
           color: LAMP_GLOW,
@@ -1671,10 +1765,11 @@ pub fn place(
     }
     MachineKind::Lamp => {
       let beam = Vec3::new(LAMP_TILT.sin(), -LAMP_TILT.cos(), 0.0);
-      parts.push((
+      bolt(
+        commands,
         Collider::cylinder(LAMP_SHADE, LAMP_HEIGHT + 0.5),
         Transform::from_xyz(0.0, (LAMP_HEIGHT + 0.5) / 2.0, 0.0)
-      ));
+      );
       commands.spawn((
         SpotLight {
           color: LAMP_GLOW,
@@ -1690,163 +1785,173 @@ pub fn place(
         Mesh3d(assets.glow_mesh.clone()),
         MeshMaterial3d(assets.lamp_glow.clone()),
         NotShadowCaster,
+        NoFrustumCulling,
         Transform::from_translation(Vec3::new(0.0, LAMP_HEIGHT, 0.0) + beam * 0.24)
           .looking_to(beam, Vec3::Y)
           .with_scale(Vec3::new(LAMP_SHADE * 0.78, LAMP_SHADE * 0.78, LAMP_SHADE * 0.4)),
         ChildOf(root)
       ));
     }
-    _ => {
-      let length = kind.footprint().x as f32 * CELL - 0.02;
+    _ => {}
+  }
+
+  if kind.carries_belt() {
+    let length = kind.footprint().x as f32 * CELL - 0.02;
+    commands.spawn((
+      ConveyorBelt { local_direction: Vec3::X, speed: 1.8 },
+      Collider::cuboid(length, BELT_TOP, 1.84),
+      Friction::new(1.0),
+      Transform::from_xyz(0.0, BELT_TOP / 2.0, 0.0),
+      ChildOf(root)
+    ));
+    for side in [-1.0, 1.0] {
+      bolt(
+        commands,
+        Collider::cuboid(length, 0.20, 0.12),
+        Transform::from_xyz(0.0, 0.16, side * 0.95)
+      );
+    }
+    let arrows = arrows_along(kind);
+    for step in 0..arrows {
       commands.spawn((
-        ConveyorBelt { local_direction: Vec3::X, speed: 1.8 },
-        Collider::cuboid(length, BELT_TOP, 1.84),
-        Friction::new(1.0),
-        Transform::from_xyz(0.0, BELT_TOP / 2.0, 0.0),
+        BeltArrow { phase: step as f32 / arrows as f32, span: arrow_span(kind) },
+        arrow_at(assets, 0.0),
         ChildOf(root)
       ));
-      for side in [-1.0, 1.0] {
-        parts.push((
-          Collider::cuboid(length, 0.20, 0.12),
-          Transform::from_xyz(0.0, 0.16, side * 0.95)
-        ));
-      }
-      let arrows = arrows_along(kind);
-      for step in 0..arrows {
+    }
+    if let Some(upgrader) = kind.upgrade() {
+      if kind == MachineKind::FlameJet {
+        bolt(
+          commands,
+          Collider::cuboid(0.8, 2.0, 0.7),
+          Transform::from_xyz(0.0, 1.0, -1.12)
+        );
         commands.spawn((
-          BeltArrow { phase: step as f32 / arrows as f32, span: arrow_span(kind) },
-          arrow_at(assets, 0.0),
+          ParticleEffect::new(assets.jet_flame.clone()),
+          Transform::from_xyz(0.0, JET_HEIGHT, -0.26),
           ChildOf(root)
         ));
-      }
-      if let Some(upgrader) = kind.upgrade() {
-        if kind == MachineKind::FlameJet {
-          parts.push((
-            Collider::cuboid(0.8, 2.0, 0.7),
-            Transform::from_xyz(0.0, 1.0, -1.12)
-          ));
-          commands.spawn((
-            ParticleEffect::new(assets.jet_flame.clone()),
-            Transform::from_xyz(0.0, JET_HEIGHT, -0.26),
-            ChildOf(root)
-          ));
-        } else if kind == MachineKind::ChillBeam {
-          for along in [-1.0, 1.0] {
-            for across in [-1.0, 1.0] {
-              parts.push((
-                Collider::cuboid(0.26, CHILL_GANTRY, 0.26),
-                Transform::from_xyz(
-                  along * CHILL_LEG,
-                  CHILL_GANTRY / 2.0,
-                  across * CHILL_RAIL
-                )
-              ));
-            }
-            parts.push((
-              Collider::cuboid(2.6, 0.58, 0.58),
-              Transform::from_xyz(0.0, CHILL_TANK, along * CHILL_RAIL)
-            ));
+      } else if kind == MachineKind::ChillBeam {
+        for along in [-1.0, 1.0] {
+          for across in [-1.0, 1.0] {
+            bolt(
+              commands,
+              Collider::cuboid(0.26, CHILL_GANTRY, 0.26),
+              Transform::from_xyz(
+                along * CHILL_LEG,
+                CHILL_GANTRY / 2.0,
+                across * CHILL_RAIL
+              )
+            );
           }
-          parts.push((
-            Collider::cuboid(CHILL_LEG * 2.0, 1.1, 2.1),
-            Transform::from_xyz(0.0, CHILL_GANTRY, 0.0)
-          ));
-          commands.spawn((
-            ParticleEffect::new(assets.chill_frost.clone()),
-            Transform::from_xyz(0.0, CHILL_MOUTH, 0.0),
-            ChildOf(root)
-          ));
-          commands.spawn((
-            PointLight {
-              color: CHILL_GLOW,
-              intensity: 240_000.0,
-              range: 12.0,
-              ..default()
-            },
-            Mesh3d(assets.glow_mesh.clone()),
-            MeshMaterial3d(assets.chill_glow.clone()),
-            NotShadowCaster,
-            Transform::from_xyz(0.0, CHILL_MOUTH, 0.0).with_scale(Vec3::splat(0.12)),
-            ChildOf(root)
-          ));
-        } else if kind == MachineKind::Embiggener {
-          for (slot, (high, wide)) in GATES.into_iter().enumerate() {
-            let along = slot as f32 * GATE_STEP - GATE_STEP;
-            for side in [-1.0, 1.0] {
-              parts.push((
-                Collider::cuboid(GATE_HALF * 2.0, high + GATE_WALL, GATE_WALL),
-                Transform::from_xyz(
-                  along,
-                  BELT_TOP + (high + GATE_WALL) / 2.0,
-                  side * (wide + GATE_WALL / 2.0)
-                )
-              ));
-            }
-            parts.push((
-              Collider::cuboid(GATE_HALF * 2.0, GATE_WALL, (wide + GATE_WALL) * 2.0),
-              Transform::from_xyz(along, BELT_TOP + high + GATE_WALL / 2.0, 0.0)
-            ));
-          }
-          commands.spawn((
-            Mesh3d(assets.glow_mesh.clone()),
-            MeshMaterial3d(assets.gauge_glow.clone()),
-            NotShadowCaster,
-            Transform::from_translation(GAUGE_AT).with_scale(Vec3::splat(0.11)),
-            ChildOf(root)
-          ));
-        } else {
-          parts.push((
-            Collider::cuboid(1.04, 2.5, 0.5),
-            Transform::from_xyz(0.0, 1.05, 0.87)
-          ));
-          parts.push((
-            Collider::cuboid(1.04, 2.5, 0.5),
-            Transform::from_xyz(0.0, 1.05, -0.87)
-          ));
+          bolt(
+            commands,
+            Collider::cuboid(2.6, 0.58, 0.58),
+            Transform::from_xyz(0.0, CHILL_TANK, along * CHILL_RAIL)
+          );
         }
-        if kind == MachineKind::Orewash {
-          commands.spawn((
-            ParticleEffect::new(assets.wash_spray.clone()),
-            Transform::from_xyz(0.0, WASH_BAR - 0.34, 0.0),
-            ChildOf(root)
-          ));
-          commands.spawn((
-            Mesh3d(assets.sheet_mesh.clone()),
-            MeshMaterial3d(assets.sheet_material.clone()),
-            NotShadowCaster,
-            Transform::from_xyz(0.0, 0.88, 0.0),
-            ChildOf(root)
-          ));
-          for slot in 0..FLAPS_PER_CURTAIN * 2 {
-            let across =
-              (slot % FLAPS_PER_CURTAIN) as f32 / (FLAPS_PER_CURTAIN - 1) as f32 - 0.5;
-            let along = (slot / FLAPS_PER_CURTAIN) as f32 * 2.0 - 1.0;
-            commands.spawn((
-              Mesh3d(assets.flap_mesh.clone()),
-              MeshMaterial3d(assets.flap_material.clone()),
-              NotShadowCaster,
-              Transform::from_xyz(along * FLAP_REACH, 0.90, across * 1.42),
-              ChildOf(root)
-            ));
-          }
-        }
-        let sensed =
-          (kind == MachineKind::Embiggener).then(|| -GATE_STEP / 2.0).unwrap_or_default();
+        bolt(
+          commands,
+          Collider::cuboid(CHILL_LEG * 2.0, 1.1, 2.1),
+          Transform::from_xyz(0.0, CHILL_GANTRY, 0.0)
+        );
         commands.spawn((
-          upgrader,
-          Collider::cuboid(0.5, 0.8, 1.5),
-          Sensor,
-          CollisionEventsEnabled,
-          Transform::from_xyz(sensed, BELT_TOP + 0.4, 0.0),
+          ParticleEffect::new(assets.chill_frost.clone()),
+          Transform::from_xyz(0.0, CHILL_MOUTH, 0.0),
           ChildOf(root)
         ));
+        commands.spawn((
+          PointLight {
+            color: CHILL_GLOW,
+            intensity: 240_000.0,
+            range: 12.0,
+            ..default()
+          },
+          Mesh3d(assets.glow_mesh.clone()),
+          MeshMaterial3d(assets.chill_glow.clone()),
+          NotShadowCaster,
+          NoFrustumCulling,
+          Transform::from_xyz(0.0, CHILL_MOUTH, 0.0).with_scale(Vec3::splat(0.12)),
+          ChildOf(root)
+        ));
+      } else if kind == MachineKind::Embiggener {
+        for (slot, (high, wide)) in GATES.into_iter().enumerate() {
+          let along = slot as f32 * GATE_STEP - GATE_STEP;
+          for side in [-1.0, 1.0] {
+            bolt(
+              commands,
+              Collider::cuboid(GATE_HALF * 2.0, high + GATE_WALL, GATE_WALL),
+              Transform::from_xyz(
+                along,
+                BELT_TOP + (high + GATE_WALL) / 2.0,
+                side * (wide + GATE_WALL / 2.0)
+              )
+            );
+          }
+          bolt(
+            commands,
+            Collider::cuboid(GATE_HALF * 2.0, GATE_WALL, (wide + GATE_WALL) * 2.0),
+            Transform::from_xyz(along, BELT_TOP + high + GATE_WALL / 2.0, 0.0)
+          );
+        }
+        commands.spawn((
+          Mesh3d(assets.glow_mesh.clone()),
+          MeshMaterial3d(assets.gauge_glow.clone()),
+          NotShadowCaster,
+          Transform::from_translation(GAUGE_AT).with_scale(Vec3::splat(0.11)),
+          ChildOf(root)
+        ));
+      } else {
+        bolt(
+          commands,
+          Collider::cuboid(1.04, 2.5, 0.5),
+          Transform::from_xyz(0.0, 1.05, 0.87)
+        );
+        bolt(
+          commands,
+          Collider::cuboid(1.04, 2.5, 0.5),
+          Transform::from_xyz(0.0, 1.05, -0.87)
+        );
       }
+      if kind == MachineKind::Orewash {
+        commands.spawn((
+          ParticleEffect::new(assets.wash_spray.clone()),
+          Transform::from_xyz(0.0, WASH_BAR - 0.34, 0.0),
+          ChildOf(root)
+        ));
+        commands.spawn((
+          Mesh3d(assets.sheet_mesh.clone()),
+          MeshMaterial3d(assets.sheet_material.clone()),
+          NotShadowCaster,
+          Transform::from_xyz(0.0, 0.88, 0.0),
+          ChildOf(root)
+        ));
+        for slot in 0..FLAPS_PER_CURTAIN * 2 {
+          let across =
+            (slot % FLAPS_PER_CURTAIN) as f32 / (FLAPS_PER_CURTAIN - 1) as f32 - 0.5;
+          let along = (slot / FLAPS_PER_CURTAIN) as f32 * 2.0 - 1.0;
+          commands.spawn((
+            Mesh3d(assets.flap_mesh.clone()),
+            MeshMaterial3d(assets.flap_material.clone()),
+            NotShadowCaster,
+            Transform::from_xyz(along * FLAP_REACH, 0.90, across * 1.42),
+            ChildOf(root)
+          ));
+        }
+      }
+      let sensed =
+        (kind == MachineKind::Embiggener).then(|| -GATE_STEP / 2.0).unwrap_or_default();
+      commands.spawn((
+        upgrader,
+        Collider::cuboid(0.5, 0.8, 1.5),
+        Sensor,
+        CollisionEventsEnabled,
+        Transform::from_xyz(sensed, BELT_TOP + 0.4, 0.0),
+        ChildOf(root)
+      ));
     }
   }
 
-  for (collider, offset) in parts {
-    commands.spawn((collider, offset, ChildOf(root)));
-  }
   root
 }
 

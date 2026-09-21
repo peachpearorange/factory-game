@@ -1,6 +1,8 @@
 use {crate::{sdf, world::GROUND},
      avian3d::prelude::*,
-     bevy::prelude::*};
+     bevy::prelude::*,
+     enum_assoc::Assoc,
+     fidget::context::Tree};
 
 const SETTLED: f32 = 0.42;
 const FADE: f32 = 2.0;
@@ -59,46 +61,61 @@ impl Effects {
   }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Assoc)]
+#[func(pub const fn noun(self) -> &'static str)]
+#[func(fn shape(self) -> Tree)]
+#[func(const fn base(self) -> Vec3)]
+#[func(const fn roughness(self) -> f32 { 0.85 })]
+#[func(const fn metallic(self) -> f32 { 0.0 })]
 pub enum OreForm {
+  #[assoc(
+    noun = "Ore",
+    base = Vec3::new(0.42, 0.40, 0.38),
+    shape = sdf::smooth_union(
+      sdf::rounded_box(Vec3::new(0.34, 0.28, 0.30), 0.06),
+      sdf::at(sdf::sphere(0.22), Vec3::new(0.14, 0.12, -0.08)),
+      0.10
+    )
+  )]
   Rock,
-  Egg
+  #[assoc(
+    noun = "Egg",
+    base = Vec3::new(0.95, 0.90, 0.79),
+    shape = sdf::smooth_union(
+      sdf::at(sdf::sphere(0.21), Vec3::new(0.0, -0.06, 0.0)),
+      sdf::at(sdf::sphere(0.15), Vec3::new(0.0, 0.14, 0.0)),
+      0.18
+    )
+  )]
+  Egg,
+  #[assoc(
+    noun = "Nugget",
+    base = Vec3::new(1.0, 0.74, 0.20),
+    roughness = 0.24,
+    metallic = 0.95,
+    shape = sdf::union([
+      sdf::at(
+        sdf::rounded_box(Vec3::new(0.26, 0.17, 0.22), 0.05),
+        Vec3::new(0.0, -0.04, 0.0)
+      ),
+      sdf::at(
+        sdf::rotate_y(sdf::rounded_box(Vec3::new(0.19, 0.13, 0.16), 0.04), 0.7),
+        Vec3::new(0.11, 0.11, -0.06)
+      ),
+      sdf::at(
+        sdf::rotate_z(sdf::rounded_box(Vec3::new(0.14, 0.10, 0.13), 0.03), 0.5),
+        Vec3::new(-0.16, 0.09, 0.08)
+      )
+    ])
+  )]
+  Nugget
 }
 
 impl OreForm {
-  const ALL: [Self; 2] = [Self::Rock, Self::Egg];
+  const ALL: [Self; 3] = [Self::Rock, Self::Egg, Self::Nugget];
   const COUNT: usize = Self::ALL.len();
 
   const fn index(self) -> usize { self as usize }
-
-  pub const fn noun(self) -> &'static str {
-    match self {
-      Self::Rock => "Ore",
-      Self::Egg => "Egg"
-    }
-  }
-
-  fn shape(self) -> fidget::context::Tree {
-    match self {
-      Self::Rock => sdf::smooth_union(
-        sdf::rounded_box(Vec3::new(0.34, 0.28, 0.30), 0.06),
-        sdf::at(sdf::sphere(0.22), Vec3::new(0.14, 0.12, -0.08)),
-        0.10
-      ),
-      Self::Egg => sdf::smooth_union(
-        sdf::at(sdf::sphere(0.21), Vec3::new(0.0, -0.06, 0.0)),
-        sdf::at(sdf::sphere(0.15), Vec3::new(0.0, 0.14, 0.0)),
-        0.18
-      )
-    }
-  }
-
-  fn base(self) -> Vec3 {
-    match self {
-      Self::Rock => Vec3::new(0.42, 0.40, 0.38),
-      Self::Egg => Vec3::new(0.95, 0.90, 0.79)
-    }
-  }
 }
 
 pub const GIRTH_CAP: f32 = 1.8;
@@ -161,8 +178,8 @@ fn load_ore_assets(
       materials.add(StandardMaterial {
         base_color: effects.tint(form.base()),
         emissive: effects.emissive(),
-        perceptual_roughness: 0.85,
-        metallic: 0.0,
+        perceptual_roughness: form.roughness(),
+        metallic: form.metallic(),
         ..default()
       })
     })

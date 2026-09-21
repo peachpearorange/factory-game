@@ -289,12 +289,11 @@ fn update_tooltip(
         machine_root(entity, &parents, &machines)
           .and_then(|root| machines.get(root).ok())
           .map(|machine| {
-            let spec = machine.kind.spec();
             (
-              spec.name.to_string(),
+              machine.kind.name().to_string(),
               format!(
                 "{}\n{}",
-                spec.blurb,
+                machine.kind.blurb(),
                 deleting
                   .then_some("Click to store it.")
                   .unwrap_or("Click to pick it up.")

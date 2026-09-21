@@ -192,22 +192,20 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
   let inventory_grid = commands.spawn((grid(), ChildOf(inventory))).id();
 
   for kind in MachineKind::ALL {
-    let spec = kind.spec();
-
     commands.spawn((
       BuyTile(kind),
       HoverInfo {
-        title: spec.name.to_string(),
-        detail: spec
-          .unlock
-          .map(|task| format!("{}\nLocked — {task}", spec.blurb))
-          .unwrap_or_else(|| spec.blurb.to_string())
+        title: kind.name().to_string(),
+        detail: kind
+          .unlock()
+          .map(|task| format!("{}\nLocked — {task}", kind.blurb()))
+          .unwrap_or_else(|| kind.blurb().to_string())
       },
       tile(
         previews.image(kind),
-        spec.tier,
-        spec.name,
-        spec.unlock.is_some(),
+        kind.tier(),
+        kind.name(),
+        kind.unlock().is_some(),
         (heavy("", style::SMALL, style::INK, &bold), PriceLabel(kind)),
         &bold
       ),
@@ -217,11 +215,11 @@ fn spawn_panels(mut commands: Commands, previews: Res<MachinePreviews>, bold: Re
     commands.spawn((
       StockEntry(kind),
       StockTile(kind),
-      HoverInfo { title: spec.name.to_string(), detail: spec.blurb.to_string() },
+      HoverInfo { title: kind.name().to_string(), detail: kind.blurb().to_string() },
       tile(
         previews.image(kind),
-        spec.tier,
-        spec.name,
+        kind.tier(),
+        kind.name(),
         false,
         (heavy("", style::SMALL, style::INK, &bold), CountLabel(kind)),
         &bold
@@ -374,11 +372,10 @@ fn refresh_panels(
     .unwrap_or(style::BUTTON);
 
   for (PriceLabel(kind), mut text) in &mut prices {
-    let spec = kind.spec();
-    **text = spec
-      .unlock
+    **text = kind
+      .unlock()
       .map(|_| "Locked".to_string())
-      .unwrap_or_else(|| format!("${:.0}", spec.price));
+      .unwrap_or_else(|| format!("${:.0}", kind.price()));
   }
   for (CountLabel(kind), mut text) in &mut counts {
     **text = format!("x{}", inventory.count(*kind));
@@ -387,10 +384,9 @@ fn refresh_panels(
     node.display = shown(inventory.count(*kind) > 0);
   }
   for (BuyTile(kind), mut background) in &mut tiles {
-    let spec = kind.spec();
-    background.0 = (spec.unlock.is_none() && money.0 >= spec.price)
-      .then(|| spec.tier.swatch())
-      .unwrap_or_else(|| spec.tier.swatch().mix(&style::MUTED, 0.6));
+    background.0 = (kind.unlock().is_none() && money.0 >= kind.price())
+      .then(|| kind.tier().swatch())
+      .unwrap_or_else(|| kind.tier().swatch().mix(&style::MUTED, 0.6));
   }
 }
 
@@ -410,23 +406,22 @@ fn buy_machines(
   mut commands: Commands
 ) {
   for (BuyTile(kind), interaction) in &tiles {
-    let spec = kind.spec();
     if *interaction == Interaction::Pressed {
-      let (announcement, tint) = spec
-        .unlock
+      let (announcement, tint) = kind
+        .unlock()
         .map(|task| (format!("Still sealed — {task}"), style::SEALED))
         .or_else(|| {
-          (money.0 < spec.price).then(|| {
+          (money.0 < kind.price()).then(|| {
             (
-              format!("${:.0} short of a {}", spec.price - money.0, spec.name),
+              format!("${:.0} short of a {}", kind.price() - money.0, kind.name()),
               style::DENIED
             )
           })
         })
         .unwrap_or_else(|| {
-          money.0 -= spec.price;
+          money.0 -= kind.price();
           inventory.add(*kind);
-          (format!("{} is yours", spec.name), style::GRANTED)
+          (format!("{} is yours", kind.name()), style::GRANTED)
         });
       announce(&mut commands, *stack, &announcement, tint);
     }

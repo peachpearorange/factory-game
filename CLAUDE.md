@@ -3,7 +3,7 @@ that's what this is
 
 # Design Goals
 a game similar in style to Miner's Haven the Roblox game. 3d with physics and day/night cycle. a concrete square platform which player gets to build on, surrounded by natural environment, an island i suppose. objects are composed out of shapes in a very roblox like fashion, with materials, occasionally transparency, maybe some kind of programmatic texturing. shapes generally not smoothed with neighbours except for what should be soft objects but really there's not gonna be much need for that, but sometimes have like rounded corners on smooth objects.
- shapes are expressed as SDF/CSG trees, baked to meshes with fidget (manifold dual contouring, preserves sharp corners) and rendered through bevy's instanced mesh pipeline. no runtime raymarching. use bevy 0.19.1 and appropriate current crates.
+  use bevy 0.19.1 and appropriate current crates.
 player unlocks and buys machines, they can be quite wacky but generally have a conveyor belt through if they're upgraders, and perform a change to the object put in. can be far broader than in Miner's Haven as "ores" may be more diverse things such as dragon eggs which go in a hatching machine and other upgraders, to ultimately produce baby dragons with different properties.
 so different properties there like putting things on fire or making things wet or radioactive and whatnot. some machines respond to these.
 ores within certain distance of camera have a popup above them with value and colored symbolic icons(svg perhaps) indicating properties that they have. when an ore sells in a furnace, a similar number popup shows up indicating what it sold for.
@@ -22,6 +22,7 @@ One env var, `FACTORY`, holds a JSON5 `opts::Opts` — braces, unquoted keys, mi
 - `day: <secs>` — length of one day/night cycle, default 240.
 - `time: <secs>` — how far into the cycle the game starts. 0 is sunrise, a quarter of `day` is noon, three quarters is midnight.
 - `trade: <secs>` — how long the trade boat stays away between visits, default 170. Set it low to watch it sail in.
+- `money: <amount>` — what the purse starts with, default 600. Set it high to test machines without earning them.
 - `shot: <secs>` — take a screenshot at that elapsed time, then exit. Lands in `screenshots/`.
 - `showcase: '<machine name fragment>'` — see below.
 

@@ -36,9 +36,7 @@ fn slug(text: &str) -> String {
 
 fn wanted() -> Option<MachineKind> {
   crate::opts::opts().showcase.as_ref().and_then(|asked| {
-    MachineKind::ALL
-      .into_iter()
-      .find(|kind| slug(kind.spec().name).contains(&slug(asked)))
+    MachineKind::ALL.into_iter().find(|kind| slug(kind.name()).contains(&slug(asked)))
   })
 }
 
@@ -91,7 +89,7 @@ fn frame_showcase(
     if showcase.shot < Showcase::COUNT {
       capture(
         &mut commands,
-        &format!("showcase/{}-{moment}-{angle:.0}deg", slug(showcase.kind.spec().name))
+        &format!("showcase/{}-{moment}-{angle:.0}deg", slug(showcase.kind.name()))
       );
     } else if showcase.shot >= Showcase::COUNT + DRAIN {
       quit.write(AppExit::Success);

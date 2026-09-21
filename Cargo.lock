@@ -2655,6 +2655,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum-assoc"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0590c4a94da3372e83493b956755a6e2266830b6e4e3b101afe66e3f39477b91"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2814,6 +2825,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_hanabi",
+ "enum-assoc",
  "fidget",
  "json5",
  "nalgebra",

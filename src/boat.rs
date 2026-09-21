@@ -11,7 +11,8 @@ use {crate::{block::{self, Block},
              texture,
              world::{GROUND, SEA_LEVEL}},
      avian3d::prelude::*,
-     bevy::{light::NotShadowCaster, math::Affine2, prelude::*}};
+     bevy::{camera::visibility::NoFrustumCulling, light::NotShadowCaster,
+            math::Affine2, prelude::*}};
 
 const DECK: f32 = GROUND - 0.8;
 const WALK_FROM: f32 = 38.0;
@@ -227,6 +228,7 @@ fn spawn_harbour(
       Mesh3d(flame.clone()),
       MeshMaterial3d(lantern.clone()),
       NotShadowCaster,
+      NoFrustumCulling,
       Transform::from_translation(at)
     )
   };
@@ -335,14 +337,14 @@ impl Offer {
 fn roll_stock(seed: u32) -> Vec<Offer> {
   let mut roll = Roll(seed);
   let mut shelf: Vec<MachineKind> =
-    MachineKind::ALL.into_iter().filter(|kind| kind.spec().unlock.is_none()).collect();
+    MachineKind::ALL.into_iter().filter(|kind| kind.unlock().is_none()).collect();
   let discounted = roll.below(SLOTS);
   (0..SLOTS)
     .map(|slot| {
       let kind = roll.drawn(&mut shelf);
       let sale = slot == discounted;
       let haggle = (0.75 + 0.55 * roll.next()) * sale.then_some(0.5).unwrap_or(1.0);
-      Offer { kind, price: (kind.spec().price * haggle).round(), sale, sold: false }
+      Offer { kind, price: (kind.price() * haggle).round(), sale, sold: false }
     })
     .collect()
 }
@@ -499,17 +501,16 @@ fn restock_shelf(
       commands.entity(stale).despawn();
     }
     for (slot, offer) in voyage.stock.iter().enumerate() {
-      let spec = offer.kind.spec();
       commands.spawn((
         TradeTile(slot),
         HoverInfo {
-          title: spec.name.to_string(),
-          detail: format!("{}\nOne only, while the boat is in.", spec.blurb)
+          title: offer.kind.name().to_string(),
+          detail: format!("{}\nOne only, while the boat is in.", offer.kind.blurb())
         },
         store::tile(
           previews.image(offer.kind),
-          spec.tier,
-          spec.name,
+          offer.kind.tier(),
+          offer.kind.name(),
           false,
           (heavy("", style::SMALL, style::INK, &bold), TradePrice(slot)),
           &bold
@@ -542,7 +543,7 @@ fn refresh_trade(
       .stock
       .get(*slot)
       .map(|offer| {
-        let swatch = offer.kind.spec().tier.swatch();
+        let swatch = offer.kind.tier().swatch();
         (!offer.sold && money.0 >= offer.price)
           .then_some(swatch)
           .unwrap_or_else(|| swatch.mix(&style::MUTED, 0.6))
@@ -563,19 +564,18 @@ fn trade(
     if *interaction == Interaction::Pressed
       && let Some(offer) = voyage.stock.get_mut(*slot)
     {
-      let spec = offer.kind.spec();
       let (announcement, tint) = if offer.sold {
-        (format!("The {} is already gone", spec.name), style::SEALED)
+        (format!("The {} is already gone", offer.kind.name()), style::SEALED)
       } else if money.0 < offer.price {
         (
-          format!("${:.0} short of the {}", offer.price - money.0, spec.name),
+          format!("${:.0} short of the {}", offer.price - money.0, offer.kind.name()),
           style::DENIED
         )
       } else {
         money.0 -= offer.price;
         inventory.add(offer.kind);
         offer.sold = true;
-        (format!("Traded for a {}", spec.name), style::GRANTED)
+        (format!("Traded for a {}", offer.kind.name()), style::GRANTED)
       };
       announce(&mut commands, *stack, &announcement, tint);
     }
