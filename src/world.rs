@@ -452,8 +452,8 @@ fn spawn_world(
       base_color: Color::srgb(0.66, 0.67, 0.67),
       base_color_texture: Some(images.add(texture::concrete())),
       uv_transform: Affine2::from_scale(Vec2::splat(1.0 / CONCRETE_TILE)),
-      perceptual_roughness: 0.58,
-      reflectance: 0.28,
+      perceptual_roughness: 0.88,
+      reflectance: 0.10,
       ..default()
     })),
     Transform::from_xyz(0.0, GROUND - PLATFORM_HALF.y, 0.0)
