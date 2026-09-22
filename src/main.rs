@@ -1,3 +1,4 @@
+mod airdrop;
 mod boat;
 mod catalog;
 mod construction;
@@ -48,6 +49,7 @@ fn main() {
       player::plugin,
       store::plugin,
       boat::plugin,
+      airdrop::plugin,
       ui::plugin,
       menu::plugin,
       showcase::plugin

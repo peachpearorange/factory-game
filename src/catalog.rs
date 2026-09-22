@@ -1277,7 +1277,7 @@ impl MachineAssets {
     self.meshes[kind.index()].clone()
   }
 
-  fn model(&self, kind: MachineKind) -> impl Bundle {
+  pub fn model(&self, kind: MachineKind) -> impl Bundle {
     Children::spawn(SpawnIter(
       self.parts[kind.index()]
         .clone()

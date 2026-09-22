@@ -9,7 +9,7 @@ use {crate::{catalog::{MachineKind, MachinePreviews},
              sdf,
              store::{self, HoverInfo, ToastStack, announce},
              style::{self, Bold, heavy, label, tinted},
-             world::{GROUND, SEA_LEVEL}},
+             world::{GROUND, Roll, SEA_LEVEL}},
      avian3d::prelude::*,
      bevy::{camera::visibility::NoFrustumCulling, light::NotShadowCaster, prelude::*}};
 
@@ -274,25 +274,6 @@ fn spawn_harbour(
   commands.spawn((glow(Vec3::new(0.0, CASTLE_TOP + 0.4, CASTLE)), ChildOf(boat)));
 }
 
-struct Roll(u32);
-
-impl Roll {
-  fn next(&mut self) -> f32 {
-    self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-    let mixed = self.0 ^ (self.0 >> 15);
-    (mixed.wrapping_mul(2_246_822_519) >> 8) as f32 / (1 << 24) as f32
-  }
-
-  fn below(&mut self, bound: usize) -> usize {
-    ((self.next() * bound as f32) as usize).min(bound - 1)
-  }
-
-  fn drawn<T>(&mut self, from: &mut Vec<T>) -> T {
-    let slot = self.below(from.len());
-    from.remove(slot)
-  }
-}
-
 struct Offer {
   kind: MachineKind,
   price: f32,
@@ -312,8 +293,7 @@ impl Offer {
   }
 }
 
-fn roll_stock(seed: u32) -> Vec<Offer> {
-  let mut roll = Roll(seed);
+fn roll_stock(mut roll: Roll) -> Vec<Offer> {
   let mut shelf: Vec<MachineKind> =
     MachineKind::ALL.into_iter().filter(|kind| kind.unlock().is_none()).collect();
   let discounted = roll.below(SLOTS);
@@ -380,10 +360,7 @@ fn sail_boat(
         voyage.lane = 0.0;
         voyage.passage = Passage::Docked;
         voyage.visits += 1;
-        voyage.stock = roll_stock(
-          (time.elapsed_secs() * 997.0) as u32
-            ^ voyage.visits.wrapping_mul(2_654_435_761)
-        );
+        voyage.stock = roll_stock(Roll::seeded(time.elapsed_secs(), voyage.visits));
         voyage.fresh = true;
         voyage.clock = Timer::from_seconds(VISIT, TimerMode::Once);
         announce(&mut commands, *stack, "The trade boat is at the dock", style::TRADE);

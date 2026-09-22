@@ -113,6 +113,9 @@ pub const STRAW: Finish = Finish::new(Surface::Painted, rgb(0.92, 0.76, 0.36));
 pub const GLASS: Finish =
   Finish::new(Surface::Glass, LinearRgba::new(0.62, 0.78, 0.86, 0.34));
 pub const CANVAS: Finish = Finish::new(Surface::Cloth, rgb(0.90, 0.88, 0.82));
+pub const SILK: Finish = Finish::new(Surface::Cloth, rgb(0.94, 0.94, 0.90));
+pub const SIGNAL: Finish = Finish::new(Surface::Cloth, rgb(0.96, 0.38, 0.10));
+pub const ROPE: Finish = Finish::new(Surface::Cloth, rgb(0.58, 0.50, 0.34));
 pub const EMBERS: Finish =
   Finish::new(Surface::Painted, rgb(1.0, 0.42, 0.07)).lit(rgb(2.6, 0.72, 0.10));
 

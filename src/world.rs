@@ -27,6 +27,33 @@ const SAND: LinearRgba = LinearRgba::rgb(0.46, 0.39, 0.23);
 const ROCK: LinearRgba = LinearRgba::rgb(0.26, 0.27, 0.25);
 const SEABED: LinearRgba = LinearRgba::rgb(0.14, 0.17, 0.15);
 
+pub struct Roll(u32);
+
+impl Roll {
+  pub fn seeded(elapsed: f32, salt: u32) -> Self {
+    Self((elapsed * 997.0) as u32 ^ salt.wrapping_mul(2_654_435_761))
+  }
+
+  pub fn next(&mut self) -> f32 {
+    self.0 = self.0.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+    let mixed = self.0 ^ (self.0 >> 15);
+    (mixed.wrapping_mul(2_246_822_519) >> 8) as f32 / (1 << 24) as f32
+  }
+
+  pub fn between(&mut self, low: f32, high: f32) -> f32 {
+    low + (high - low) * self.next()
+  }
+
+  pub fn below(&mut self, bound: usize) -> usize {
+    ((self.next() * bound as f32) as usize).min(bound - 1)
+  }
+
+  pub fn drawn<T>(&mut self, from: &mut Vec<T>) -> T {
+    let slot = self.below(from.len());
+    from.remove(slot)
+  }
+}
+
 #[derive(Resource, Default)]
 pub struct Daylight(pub f32);
 

@@ -152,6 +152,16 @@ pub fn radiation(color: Color) -> impl Bundle {
   ])
 }
 
+pub fn parachute(color: Color) -> impl Bundle {
+  glyph(children![
+    ring(1.0, 2.0, 18.0, 2.0, 9.0, color),
+    fill(9.0, 4.0, 2.0, 7.0, 1.0, color),
+    turned(fill(3.5, 6.5, 2.0, 7.0, 1.0, color), 26.0),
+    turned(fill(14.5, 6.5, 2.0, 7.0, 1.0, color), -26.0),
+    fill(6.5, 12.0, 7.0, 6.5, 1.6, color),
+  ])
+}
+
 pub fn anchor(color: Color) -> impl Bundle {
   glyph(children![
     ring(7.0, 0.5, 6.0, 1.7, 3.0, color),
