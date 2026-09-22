@@ -6,7 +6,7 @@ use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_belt
      std::f32::consts::FRAC_PI_2};
 
 const GRID_HALF: i32 = 10;
-const REACH: f32 = 40.0;
+const REACH: f32 = 400.0;
 const DOOM_SWELL: f32 = 1.04;
 const HOVER_SWELL: f32 = 1.03;
 const SWING_DECAY: f32 = 26.0;
