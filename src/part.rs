@@ -27,6 +27,18 @@ impl Axis {
   }
 }
 
+pub fn around(angle: f32, radius: f32) -> Vec3 {
+  Vec3::new(angle.cos() * radius, 0.0, -angle.sin() * radius)
+}
+
+fn radial_frame(angle: f32, radius: f32) -> Affine3A {
+  Affine3A::from_rotation_y(angle) * Affine3A::from_translation(Vec3::X * radius)
+}
+
+fn spoke_frame(spoke: u32, times: u32, radius: f32) -> Affine3A {
+  radial_frame(spoke as f32 * TAU / times as f32, radius)
+}
+
 fn wedge_corners(size: Vec3) -> [Vec3; 6] {
   let Vec3 { x, y, z } = size / 2.0;
   [
@@ -224,6 +236,10 @@ impl Part {
 
   pub fn turned(self, angle: f32) -> Self { self.spun(Quat::from_rotation_y(angle)) }
 
+  pub fn radial(self, angle: f32, radius: f32) -> Self {
+    self.framed(radial_frame(angle, radius))
+  }
+
   pub fn solid(self) -> Self { Self { solid: true, ..self } }
 
   pub fn finished(self, finish: Finish) -> Self { Self { finish, ..self } }
@@ -301,13 +317,45 @@ impl Part {
 
 pub struct Assembly(Vec<Part>);
 
-pub fn group(parts: impl IntoIterator<Item = Part>) -> Assembly {
-  Assembly(parts.into_iter().collect())
+pub trait IntoParts {
+  fn parts(self) -> Vec<Part>;
+}
+
+impl IntoParts for Part {
+  fn parts(self) -> Vec<Part> { vec![self] }
+}
+
+impl IntoParts for Assembly {
+  fn parts(self) -> Vec<Part> { self.0 }
+}
+
+impl<T: IntoParts> IntoParts for Option<T> {
+  fn parts(self) -> Vec<Part> { self.map(T::parts).unwrap_or_default() }
+}
+
+impl<T: IntoParts> IntoParts for Vec<T> {
+  fn parts(self) -> Vec<Part> { self.into_iter().flat_map(T::parts).collect() }
+}
+
+pub fn group(parts: impl IntoIterator<Item = impl IntoParts>) -> Assembly {
+  Assembly(parts.into_iter().flat_map(IntoParts::parts).collect())
+}
+
+pub fn ring(times: u32, spoke: impl Fn(u32) -> Assembly) -> Assembly {
+  Assembly(
+    (0..times)
+      .flat_map(|step| spoke(step).framed(spoke_frame(step, times, 0.0)).0)
+      .collect()
+  )
 }
 
 impl Assembly {
   fn framed(self, by: Affine3A) -> Self {
     Self(self.0.into_iter().map(|part| part.framed(by)).collect())
+  }
+
+  pub fn with(self, more: impl IntoParts) -> Self {
+    Self(self.0.into_iter().chain(more.parts()).collect())
   }
 
   fn copied(self, frames: impl IntoIterator<Item = Affine3A>) -> Self {
@@ -343,11 +391,12 @@ impl Assembly {
     )
   }
 
+  pub fn radial(self, angle: f32, radius: f32) -> Self {
+    self.framed(radial_frame(angle, radius))
+  }
+
   pub fn ringed(self, times: u32, radius: f32) -> Self {
-    self.copied((0..times).map(|spoke| {
-      Affine3A::from_rotation_y(spoke as f32 * TAU / times as f32)
-        * Affine3A::from_translation(Vec3::X * radius)
-    }))
+    self.copied((0..times).map(|spoke| spoke_frame(spoke, times, radius)))
   }
 
   pub fn solid(self) -> Self { Self(self.0.into_iter().map(Part::solid).collect()) }

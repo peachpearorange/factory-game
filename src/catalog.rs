@@ -1,7 +1,7 @@
 use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
              material::{self, Coat, Coats, Finish},
              ore::{Effects, OreForm},
-             part::{self, Assembly, Axis, Part, group},
+             part::{self, Assembly, Axis, IntoParts, Part, group},
              sdf},
      avian3d::prelude::*,
      bevy::{camera::{RenderTarget,
@@ -40,8 +40,8 @@ const HEARTH_BACK: f32 = 1.30;
 const HEARTH_COALS: f32 = HEARTH_PAN + 0.06;
 const FURNACE_STACK: f32 = 1.86;
 const TUB_CELLS: i32 = 2;
-const TUB_STAVES: usize = 8;
-const TUB_WEIR_STAVE: usize = 4;
+const TUB_STAVES: u32 = 8;
+const TUB_WEIR_STAVE: u32 = 4;
 const TUB_RADIUS: f32 = 1.40;
 const TUB_STAVE: f32 = 0.16;
 const TUB_WIDE: f32 = 1.20;
@@ -56,9 +56,12 @@ const TUB_BENCH: f32 = 0.28;
 const TUB_HOOP_LOW: f32 = 0.26;
 const TUB_HOOP_HIGH: f32 = 0.74;
 const TUB_JET: f32 = 0.30;
-const TUB_PUMP: Vec3 = Vec3::new(1.46, 0.0, 1.46);
-const TUB_STEPS: Vec3 = Vec3::new(-1.48, 0.0, 1.48);
-const TUB_COVER: Vec3 = Vec3::new(1.20, 0.0, -1.20);
+const TUB_PUMP_WAY: f32 = -FRAC_PI_4;
+const TUB_PUMP_OUT: f32 = 2.06;
+const TUB_STEPS_WAY: f32 = 3.0 * FRAC_PI_4;
+const TUB_STEPS_OUT: f32 = 2.09;
+const TUB_COVER_WAY: f32 = FRAC_PI_4;
+const TUB_COVER_OUT: f32 = 1.70;
 const TUB_DUCK: Vec3 = Vec3::new(0.46, TUB_WATER, -0.62);
 const TUB_GLOW: Color = Color::srgb(0.46, 0.90, 0.96);
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
@@ -187,7 +190,7 @@ pub enum MachineKind {
     price = 110.0,
     tier = Tier::Plain,
     model = coop_model(),
-    parts = coop_parts().solid().into_iter().collect(),
+    parts = coop_parts().solid().parts(),
     dropper = drops(4.2, 6.0, OreForm::Egg, CHUTE_SPOUT)
   )]
   Coop,
@@ -198,7 +201,7 @@ pub enum MachineKind {
     price = 2400.0,
     tier = Tier::Exotic,
     footprint = IVec2::splat(MINE_CELLS),
-    parts = gold_mine().into_iter().collect(),
+    parts = gold_mine().parts(),
     dropper = drops(5.0, 95.0, OreForm::Nugget, MINE_SPOUT)
   )]
   GoldMine,
@@ -208,7 +211,7 @@ pub enum MachineKind {
     price = 250.0,
     tier = Tier::Sturdy,
     preview_spin = 2.3,
-    parts = hearth().into_iter().collect()
+    parts = hearth().parts()
   )]
   Furnace,
   #[assoc(
@@ -219,7 +222,7 @@ pub enum MachineKind {
     tier = Tier::Refined,
     footprint = IVec2::splat(TUB_CELLS),
     preview_spin = 2.3,
-    parts = hot_tub().into_iter().collect()
+    parts = hot_tub().parts()
   )]
   HotTub,
   #[assoc(
@@ -572,7 +575,7 @@ fn coop_parts() -> Assembly {
     .at(Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, 0.30))])
   .mirrored(Axis::Z);
 
-  group([
+  let body = group([
     timber.slab(Vec3::new(1.24, 0.12, 1.32)).under(Vec3::new(
       DROPPER_BACK,
       CHUTE_FLOOR + 0.02,
@@ -601,13 +604,9 @@ fn coop_parts() -> Assembly {
       CHUTE_FLOOR + 0.10,
       0.0
     ))
-  ])
-  .into_iter()
-  .chain(legs)
-  .chain(walls)
-  .chain(roofs)
-  .chain(rails)
-  .collect()
+  ]);
+
+  group([body, legs, walls, roofs, rails])
 }
 
 fn hen() -> Tree {
@@ -719,7 +718,7 @@ fn gold_mine() -> Assembly {
     group([timber.slab(Vec3::new(0.14, 0.14, 1.24)).at(Vec3::new(0.65, MINE_HEAD, 0.0))])
       .repeated(2, Vec3::X * 1.40);
 
-  group([
+  let seams = group([
     stone
       .slab(Vec3::new(0.85, MINE_CREST, 3.90))
       .on(Vec3::new(MINE_BACK + 0.425, 0.0, 0.0))
@@ -764,14 +763,9 @@ fn gold_mine() -> Assembly {
     timber
       .slab(Vec3::new(0.20, 0.22, (MINE_BORE + 0.20) * 2.0))
       .on(Vec3::new(MINE_FACE, MINE_ROOF, 0.0))
-  ])
-  .into_iter()
-  .chain(hill)
-  .chain(trestle)
-  .chain(flanks)
-  .chain(sleepers)
-  .chain(yokes)
-  .collect()
+  ]);
+
+  group([seams, hill, trestle, flanks, sleepers, yokes])
 }
 
 fn hearth() -> Assembly {
@@ -786,7 +780,7 @@ fn hearth() -> Assembly {
   ])
   .mirrored(Axis::Z);
 
-  group([
+  let pan = group([
     material::SOOT
       .slab(Vec3::new(HEARTH_HALF * 2.0, HEARTH_PAN, HEARTH_HALF * 2.0))
       .on(Vec3::ZERO)
@@ -821,14 +815,9 @@ fn hearth() -> Assembly {
       FURNACE_STACK,
       0.0
     ))
-  ])
-  .into_iter()
-  .chain(walls)
-  .collect()
-}
+  ]);
 
-fn around(angle: f32, radius: f32) -> Vec3 {
-  Vec3::new(angle.cos() * radius, 0.0, -angle.sin() * radius)
+  group([pan, walls])
 }
 
 fn hot_tub() -> Assembly {
@@ -836,79 +825,69 @@ fn hot_tub() -> Assembly {
     (material::BOARD, material::TIMBER, material::BRASS, material::IRON);
   let (water, foam) = (material::WATER, material::FOAM);
 
-  let ring = (0..TUB_STAVES).flat_map(|spoke| {
-    let angle = spoke as f32 * TAU / TUB_STAVES as f32;
+  let ring = part::ring(TUB_STAVES, |spoke| {
     let weir = spoke == TUB_WEIR_STAVE;
-    let stave = cedar
-      .slab(Vec3::new(TUB_STAVE, weir.then_some(TUB_LEDGE).unwrap_or(TUB_HIGH), TUB_WIDE))
-      .on(around(angle, TUB_RADIUS))
-      .turned(angle)
-      .solid();
-    let hoop = move |rise: f32| {
-      brass
-        .slab(Vec3::new(0.05, 0.09, TUB_WIDE + 0.05))
-        .at(around(angle, TUB_RADIUS + TUB_STAVE / 2.0) + Vec3::Y * rise)
-        .turned(angle)
+    let hoop = |rise: f32| {
+      brass.slab(Vec3::new(0.05, 0.09, TUB_WIDE + 0.05)).at(Vec3::new(
+        TUB_RADIUS + TUB_STAVE / 2.0,
+        rise,
+        0.0
+      ))
     };
-    [stave]
-      .into_iter()
-      .chain(weir.then(|| {
-        brass
-          .slab(Vec3::new(0.30, TUB_WEIR - TUB_LEDGE, TUB_WIDE))
-          .on(around(angle, TUB_RADIUS) + Vec3::Y * TUB_LEDGE)
-          .turned(angle)
-      }))
-      .chain((!weir).then(|| {
-        coping
-          .slab(Vec3::new(0.36, TUB_RIM - TUB_HIGH, TUB_WIDE + 0.08))
-          .on(around(angle, TUB_RADIUS + 0.03) + Vec3::Y * TUB_HIGH)
-          .turned(angle)
-      }))
-      .chain((!weir).then(|| hoop(TUB_HOOP_LOW)))
-      .chain((!weir).then(|| hoop(TUB_HOOP_HIGH)))
-      .chain((!weir).then(|| {
-        cedar
-          .slab(Vec3::new(0.42, 0.10, TUB_WIDE * 0.84))
-          .on(around(angle, TUB_RADIUS - 0.48) + Vec3::Y * TUB_BENCH)
-          .turned(angle)
-      }))
-      .chain((!weir).then(|| {
+    group([cedar
+      .slab(Vec3::new(TUB_STAVE, weir.then_some(TUB_LEDGE).unwrap_or(TUB_HIGH), TUB_WIDE))
+      .on(Vec3::X * TUB_RADIUS)
+      .solid()])
+    .with(weir.then(|| {
+      brass
+        .slab(Vec3::new(0.30, TUB_WEIR - TUB_LEDGE, TUB_WIDE))
+        .on(Vec3::new(TUB_RADIUS, TUB_LEDGE, 0.0))
+    }))
+    .with((!weir).then(|| {
+      group([
+        coping.slab(Vec3::new(0.36, TUB_RIM - TUB_HIGH, TUB_WIDE + 0.08)).on(Vec3::new(
+          TUB_RADIUS + 0.03,
+          TUB_HIGH,
+          0.0
+        )),
+        hoop(TUB_HOOP_LOW),
+        hoop(TUB_HOOP_HIGH),
+        cedar.slab(Vec3::new(0.42, 0.10, TUB_WIDE * 0.84)).on(Vec3::new(
+          TUB_RADIUS - 0.48,
+          TUB_BENCH,
+          0.0
+        )),
         brass
           .rod(0.15, 0.14)
-          .at(around(angle, TUB_RADIUS - 0.24) + Vec3::Y * TUB_JET)
+          .at(Vec3::new(TUB_RADIUS - 0.24, TUB_JET, 0.0))
           .tilted(FRAC_PI_2)
-          .turned(angle)
-      }))
-      .collect::<Vec<_>>()
+      ])
+    }))
   });
-
   let bolts = group([brass.cube(0.08).under(Vec3::X * (TUB_RADIUS + 0.14))])
     .at(Vec3::Y * (TUB_RIM - 0.02))
     .ringed(16, 0.0);
   let pump = group([
     iron.slab(Vec3::new(0.62, 0.52, 0.80)).on(Vec3::ZERO).solid(),
     material::STEEL.slab(Vec3::new(0.66, 0.06, 0.84)).on(Vec3::Y * 0.52),
-    material::SOOT.rod(0.34, 0.30).at(Vec3::new(0.0, 0.30, 0.0)).rolled(FRAC_PI_2),
+    material::SOOT.rod(0.34, 0.30).at(Vec3::Y * 0.30).rolled(FRAC_PI_2),
     brass.rod(0.10, 0.26).at(Vec3::new(0.0, 0.66, 0.24)),
     material::GLASS.ball(0.20).at(Vec3::new(0.0, 0.62, -0.28))
   ])
-  .turned(-FRAC_PI_4)
-  .at(TUB_PUMP);
+  .radial(TUB_PUMP_WAY, TUB_PUMP_OUT);
   let steps = group([
-    cedar.slab(Vec3::new(0.86, 0.14, 0.40)).on(Vec3::new(0.0, 0.0, 0.0)),
-    cedar.slab(Vec3::new(0.86, 0.14, 0.40)).on(Vec3::new(0.0, 0.30, -0.34)),
-    cedar.beam(0.30, 0.10).on(Vec3::new(0.34, 0.14, -0.10)),
-    cedar.beam(0.30, 0.10).on(Vec3::new(-0.34, 0.14, -0.10))
+    cedar.slab(Vec3::new(0.40, 0.14, 0.86)).on(Vec3::ZERO),
+    cedar.slab(Vec3::new(0.40, 0.14, 0.86)).on(Vec3::new(-0.34, 0.30, 0.0)),
+    cedar.beam(0.30, 0.10).on(Vec3::new(-0.10, 0.14, 0.34)),
+    cedar.beam(0.30, 0.10).on(Vec3::new(-0.10, 0.14, -0.34))
   ])
-  .turned(-FRAC_PI_4)
-  .at(TUB_STEPS);
+  .radial(TUB_STEPS_WAY, TUB_STEPS_OUT);
   let cover = group([
     cedar.slab(Vec3::new(1.36, 0.12, 1.28)).at(Vec3::new(-0.10, 0.66, 0.0)).tilted(1.26),
     brass.slab(Vec3::new(1.32, 0.04, 0.10)).at(Vec3::new(-0.04, 0.66, 0.0)).tilted(1.26),
     brass.rod(0.12, 0.10).at(Vec3::new(-0.32, 1.28, 0.0)).rolled(FRAC_PI_2)
   ])
-  .turned(FRAC_PI_4)
-  .at(TUB_COVER);
+  .radial(TUB_COVER_WAY, TUB_COVER_OUT);
   let towel = group([
     material::SIGNAL.slab(Vec3::new(0.50, 0.05, 0.44)).on(Vec3::Y * TUB_RIM),
     material::SIGNAL
@@ -916,8 +895,7 @@ fn hot_tub() -> Assembly {
       .under(Vec3::new(0.24, TUB_RIM, 0.0))
       .tilted(0.16)
   ])
-  .turned(-FRAC_PI_2)
-  .at(around(-FRAC_PI_2, TUB_RADIUS + 0.06));
+  .radial(-FRAC_PI_2, TUB_RADIUS + 0.06);
   let panel = group([
     iron.slab(Vec3::new(0.16, 0.26, 0.42)).on(Vec3::Y * TUB_RIM).solid(),
     material::GLASS.slab(Vec3::new(0.04, 0.16, 0.30)).at(Vec3::new(
@@ -934,8 +912,7 @@ fn hot_tub() -> Assembly {
       .at(Vec3::new(0.06, TUB_RIM + 0.05, -0.02))
       .lit(LinearRgba::rgb(0.2, 1.6, 0.6))
   ])
-  .turned(FRAC_PI_2)
-  .at(around(FRAC_PI_2, TUB_RADIUS));
+  .radial(FRAC_PI_2, TUB_RADIUS);
   let duck = group([
     material::BUOY.ball(0.30).at(TUB_DUCK),
     material::BUOY.ball(0.19).at(TUB_DUCK + Vec3::new(0.13, 0.19, 0.0)),
@@ -943,8 +920,13 @@ fn hot_tub() -> Assembly {
       .wedge(Vec3::new(0.14, 0.07, 0.10))
       .at(TUB_DUCK + Vec3::new(0.27, 0.18, 0.0))
   ]);
-
-  group([
+  let pipe = |thick: f32, rise: f32| {
+    brass.beam(0.86, thick).span(
+      part::around(TUB_PUMP_WAY, TUB_PUMP_OUT - 0.30) + Vec3::Y * rise,
+      part::around(TUB_PUMP_WAY, TUB_RADIUS) + Vec3::Y * rise
+    )
+  };
+  let basin = group([
     cedar.rod(TUB_BORE, TUB_FLOOR).on(Vec3::ZERO).solid(),
     water.rod(TUB_BORE - 0.06, TUB_WATER - TUB_FLOOR).on(Vec3::Y * TUB_FLOOR),
     foam.ball(0.46).at(Vec3::new(-0.34, TUB_WATER, 0.52)),
@@ -959,25 +941,11 @@ fn hot_tub() -> Assembly {
       0.50,
       0.34
     )),
-    brass.beam(0.86, 0.11).span(
-      TUB_PUMP + Vec3::new(-0.10, 0.34, -0.10),
-      around(-FRAC_PI_4, TUB_RADIUS) + Vec3::Y * 0.34
-    ),
-    brass.beam(0.86, 0.09).span(
-      TUB_PUMP + Vec3::new(-0.26, 0.62, -0.26),
-      around(-FRAC_PI_4, TUB_RADIUS) + Vec3::Y * TUB_HOOP_HIGH
-    )
-  ])
-  .into_iter()
-  .chain(ring)
-  .chain(bolts)
-  .chain(pump)
-  .chain(steps)
-  .chain(cover)
-  .chain(towel)
-  .chain(panel)
-  .chain(duck)
-  .collect()
+    pipe(0.11, 0.34),
+    pipe(0.09, TUB_HOOP_HIGH)
+  ]);
+
+  group([basin, ring, bolts, pump, steps, cover, towel, panel, duck])
 }
 
 fn bonfire_pile() -> Tree {

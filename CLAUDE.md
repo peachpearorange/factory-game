@@ -48,7 +48,7 @@ stone.faces([
 
 Sizes are full extents, never halves. Place with `at` (centre), `on` (bottom rests here), `under` (top hangs here) or `span(a, b)` (stretches between two points, working out length and rotation itself — use it for braces, ladders, cables, anything diagonal). Then `.solid()` for a collider, `.tilted/.rolled/.turned/.spun` to rotate.
 
-Never write the same part twice. `group([...])` makes an Assembly that folds its transform into its parts:
+Where a part genuinely repeats, say so once. `group([...])` makes an Assembly that folds its transform into its parts:
 
 ```rust
 group([timber.beam(CHUTE_FLOOR, 0.14).on(Vec3::new(0.46, 0.0, 0.50))])
@@ -58,6 +58,25 @@ group([timber.beam(CHUTE_FLOOR, 0.14).on(Vec3::new(0.46, 0.0, 0.50))])
 ```
 
 `mirrored(axis)` is a true reflection, so a tilted roof mirrors its tilt. `repeated(n, step)` gives runs of sleepers, rivets, palings. `ringed(n, radius)` gives bolt circles, spokes, staves. A sub-assembly — a cart, a winch, a chimney — should be its own `fn -> Assembly` that the machine places and rotates as a unit.
+
+A group's list holds anything part-shaped — a `Part`, an `Option` of one, another Assembly — so a machine is assembled by naming its pieces and listing them, never by chaining iterators:
+
+```rust
+group([basin, ring, bolts, pump, steps, cover, towel, panel, duck])
+```
+
+`.with(more)` adds one such piece to an Assembly, which is how an optional or one-off piece joins a group. `radial(angle, radius)` places a part or an assembly out along a ray and turns it to face that way, so anything authored along +X — a stave, a jet, a control panel — is written once at its own radius. `ring(n, |spoke| ...)` is `ringed` for spokes that differ: the closure returns the Assembly for that spoke, so an exception (a weir where a stave would be, one bracket left off) is a plain `if` inside it:
+
+```rust
+part::ring(TUB_STAVES, |spoke| {
+  let weir = spoke == TUB_WEIR_STAVE;
+  group([cedar.slab(size).on(Vec3::X * TUB_RADIUS).solid()])
+    .with(weir.then(|| brass.slab(cap).on(Vec3::new(TUB_RADIUS, TUB_LEDGE, 0.0))))
+    .with((!weir).then(|| group([coping, hoop(TUB_HOOP_LOW), bench, jet])))
+})
+```
+
+This is for things that are actually identical — the four legs of a coop, a run of sleepers. It is not an instruction to make everything symmetric. Boulders of differing girth, a lamp hung off one side, a door that is not centred, one shutter askew: hand-place those, and let them be uneven on purpose. A machine that is perfectly mirrored on every axis looks machine-made in the wrong way. Reach for the combinators to avoid copy-paste, not to flatten character out of a model.
 
 Name every dimension as a machine-prefixed `SCREAMING_SNAKE` const at file level, and name builders and closures after the physical object (`gold_mine`, `trestle`, `jamb`, `mast`, `yoke`).
 
