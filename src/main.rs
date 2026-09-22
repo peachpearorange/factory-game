@@ -3,6 +3,7 @@ mod boat;
 mod catalog;
 mod construction;
 mod icon;
+mod loot;
 mod machine;
 mod material;
 mod menu;
@@ -50,6 +51,7 @@ fn main() {
       store::plugin,
       boat::plugin,
       airdrop::plugin,
+      loot::plugin,
       ui::plugin,
       menu::plugin,
       showcase::plugin

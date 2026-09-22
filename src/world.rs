@@ -11,7 +11,7 @@ use {crate::{sdf, texture},
 
 pub const GROUND: f32 = 0.0;
 pub const PLATFORM_HALF: Vec3 = Vec3::new(21.0, 0.6, 21.0);
-const ISLAND_TOP: f32 = GROUND - PLATFORM_HALF.y * 2.0 + 0.35;
+pub const ISLAND_TOP: f32 = GROUND - PLATFORM_HALF.y * 2.0 + 0.35;
 const ISLAND_FLOOR: f32 = -13.0;
 pub const SEA_LEVEL: f32 = ISLAND_TOP - 4.2;
 const SHORE_RADIUS: f32 = 61.0;
