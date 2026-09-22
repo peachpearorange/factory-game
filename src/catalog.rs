@@ -17,7 +17,7 @@ use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
                    VectorType},
      enum_assoc::Assoc,
      fidget::context::Tree,
-     std::f32::consts::{FRAC_PI_2, PI, TAU}};
+     std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU}};
 
 pub const CELL: f32 = 2.0;
 pub const BELT_TOP: f32 = 0.22;
@@ -39,6 +39,28 @@ const HEARTH_RIM: f32 = 0.70;
 const HEARTH_BACK: f32 = 1.30;
 const HEARTH_COALS: f32 = HEARTH_PAN + 0.06;
 const FURNACE_STACK: f32 = 1.86;
+const TUB_CELLS: i32 = 2;
+const TUB_STAVES: usize = 8;
+const TUB_WEIR_STAVE: usize = 4;
+const TUB_RADIUS: f32 = 1.40;
+const TUB_STAVE: f32 = 0.16;
+const TUB_WIDE: f32 = 1.20;
+const TUB_HIGH: f32 = 0.94;
+const TUB_RIM: f32 = TUB_HIGH + 0.10;
+const TUB_BORE: f32 = 2.58;
+const TUB_FLOOR: f32 = 0.14;
+const TUB_WATER: f32 = 0.48;
+const TUB_LEDGE: f32 = 0.16;
+const TUB_WEIR: f32 = TUB_LEDGE + 0.06;
+const TUB_BENCH: f32 = 0.28;
+const TUB_HOOP_LOW: f32 = 0.26;
+const TUB_HOOP_HIGH: f32 = 0.74;
+const TUB_JET: f32 = 0.30;
+const TUB_PUMP: Vec3 = Vec3::new(1.46, 0.0, 1.46);
+const TUB_STEPS: Vec3 = Vec3::new(-1.48, 0.0, 1.48);
+const TUB_COVER: Vec3 = Vec3::new(1.20, 0.0, -1.20);
+const TUB_DUCK: Vec3 = Vec3::new(0.46, TUB_WATER, -0.62);
+const TUB_GLOW: Color = Color::srgb(0.46, 0.90, 0.96);
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const DROPPER_BACK: f32 = -0.42;
 const CHUTE_FLOOR: f32 = 1.16;
@@ -190,6 +212,17 @@ pub enum MachineKind {
   )]
   Furnace,
   #[assoc(
+    name = "Hot Tub",
+    blurb = "A cedar tub kept at a rolling simmer. Ore slides over the weir, the \
+             water swallows it, and the jets froth up its worth.",
+    price = 900.0,
+    tier = Tier::Refined,
+    footprint = IVec2::splat(TUB_CELLS),
+    preview_spin = 2.3,
+    parts = hot_tub().into_iter().collect()
+  )]
+  HotTub,
+  #[assoc(
     name = "Flame Forge",
     blurb = "Sets passing ore alight and multiplies what it is worth.",
     price = 400.0,
@@ -311,12 +344,13 @@ pub enum MachineKind {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 16] = [
+  pub const ALL: [Self; 17] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Coop,
     Self::GoldMine,
     Self::Furnace,
+    Self::HotTub,
     Self::Forge,
     Self::FlameJet,
     Self::MistCoil,
@@ -793,6 +827,159 @@ fn hearth() -> Assembly {
   .collect()
 }
 
+fn around(angle: f32, radius: f32) -> Vec3 {
+  Vec3::new(angle.cos() * radius, 0.0, -angle.sin() * radius)
+}
+
+fn hot_tub() -> Assembly {
+  let (cedar, coping, brass, iron) =
+    (material::BOARD, material::TIMBER, material::BRASS, material::IRON);
+  let (water, foam) = (material::WATER, material::FOAM);
+
+  let ring = (0..TUB_STAVES).flat_map(|spoke| {
+    let angle = spoke as f32 * TAU / TUB_STAVES as f32;
+    let weir = spoke == TUB_WEIR_STAVE;
+    let stave = cedar
+      .slab(Vec3::new(TUB_STAVE, weir.then_some(TUB_LEDGE).unwrap_or(TUB_HIGH), TUB_WIDE))
+      .on(around(angle, TUB_RADIUS))
+      .turned(angle)
+      .solid();
+    let hoop = move |rise: f32| {
+      brass
+        .slab(Vec3::new(0.05, 0.09, TUB_WIDE + 0.05))
+        .at(around(angle, TUB_RADIUS + TUB_STAVE / 2.0) + Vec3::Y * rise)
+        .turned(angle)
+    };
+    [stave]
+      .into_iter()
+      .chain(weir.then(|| {
+        brass
+          .slab(Vec3::new(0.30, TUB_WEIR - TUB_LEDGE, TUB_WIDE))
+          .on(around(angle, TUB_RADIUS) + Vec3::Y * TUB_LEDGE)
+          .turned(angle)
+      }))
+      .chain((!weir).then(|| {
+        coping
+          .slab(Vec3::new(0.36, TUB_RIM - TUB_HIGH, TUB_WIDE + 0.08))
+          .on(around(angle, TUB_RADIUS + 0.03) + Vec3::Y * TUB_HIGH)
+          .turned(angle)
+      }))
+      .chain((!weir).then(|| hoop(TUB_HOOP_LOW)))
+      .chain((!weir).then(|| hoop(TUB_HOOP_HIGH)))
+      .chain((!weir).then(|| {
+        cedar
+          .slab(Vec3::new(0.42, 0.10, TUB_WIDE * 0.84))
+          .on(around(angle, TUB_RADIUS - 0.48) + Vec3::Y * TUB_BENCH)
+          .turned(angle)
+      }))
+      .chain((!weir).then(|| {
+        brass
+          .rod(0.15, 0.14)
+          .at(around(angle, TUB_RADIUS - 0.24) + Vec3::Y * TUB_JET)
+          .tilted(FRAC_PI_2)
+          .turned(angle)
+      }))
+      .collect::<Vec<_>>()
+  });
+
+  let bolts = group([brass.cube(0.08).under(Vec3::X * (TUB_RADIUS + 0.14))])
+    .at(Vec3::Y * (TUB_RIM - 0.02))
+    .ringed(16, 0.0);
+  let pump = group([
+    iron.slab(Vec3::new(0.62, 0.52, 0.80)).on(Vec3::ZERO).solid(),
+    material::STEEL.slab(Vec3::new(0.66, 0.06, 0.84)).on(Vec3::Y * 0.52),
+    material::SOOT.rod(0.34, 0.30).at(Vec3::new(0.0, 0.30, 0.0)).rolled(FRAC_PI_2),
+    brass.rod(0.10, 0.26).at(Vec3::new(0.0, 0.66, 0.24)),
+    material::GLASS.ball(0.20).at(Vec3::new(0.0, 0.62, -0.28))
+  ])
+  .turned(-FRAC_PI_4)
+  .at(TUB_PUMP);
+  let steps = group([
+    cedar.slab(Vec3::new(0.86, 0.14, 0.40)).on(Vec3::new(0.0, 0.0, 0.0)),
+    cedar.slab(Vec3::new(0.86, 0.14, 0.40)).on(Vec3::new(0.0, 0.30, -0.34)),
+    cedar.beam(0.30, 0.10).on(Vec3::new(0.34, 0.14, -0.10)),
+    cedar.beam(0.30, 0.10).on(Vec3::new(-0.34, 0.14, -0.10))
+  ])
+  .turned(-FRAC_PI_4)
+  .at(TUB_STEPS);
+  let cover = group([
+    cedar.slab(Vec3::new(1.36, 0.12, 1.28)).at(Vec3::new(-0.10, 0.66, 0.0)).tilted(1.26),
+    brass.slab(Vec3::new(1.32, 0.04, 0.10)).at(Vec3::new(-0.04, 0.66, 0.0)).tilted(1.26),
+    brass.rod(0.12, 0.10).at(Vec3::new(-0.32, 1.28, 0.0)).rolled(FRAC_PI_2)
+  ])
+  .turned(FRAC_PI_4)
+  .at(TUB_COVER);
+  let towel = group([
+    material::SIGNAL.slab(Vec3::new(0.50, 0.05, 0.44)).on(Vec3::Y * TUB_RIM),
+    material::SIGNAL
+      .slab(Vec3::new(0.06, 0.62, 0.44))
+      .under(Vec3::new(0.24, TUB_RIM, 0.0))
+      .tilted(0.16)
+  ])
+  .turned(-FRAC_PI_2)
+  .at(around(-FRAC_PI_2, TUB_RADIUS + 0.06));
+  let panel = group([
+    iron.slab(Vec3::new(0.16, 0.26, 0.42)).on(Vec3::Y * TUB_RIM).solid(),
+    material::GLASS.slab(Vec3::new(0.04, 0.16, 0.30)).at(Vec3::new(
+      0.09,
+      TUB_RIM + 0.15,
+      0.0
+    )),
+    brass
+      .cube(0.06)
+      .at(Vec3::new(0.06, TUB_RIM + 0.05, 0.14))
+      .lit(LinearRgba::rgb(1.8, 0.9, 0.2)),
+    brass
+      .cube(0.06)
+      .at(Vec3::new(0.06, TUB_RIM + 0.05, -0.02))
+      .lit(LinearRgba::rgb(0.2, 1.6, 0.6))
+  ])
+  .turned(FRAC_PI_2)
+  .at(around(FRAC_PI_2, TUB_RADIUS));
+  let duck = group([
+    material::BUOY.ball(0.30).at(TUB_DUCK),
+    material::BUOY.ball(0.19).at(TUB_DUCK + Vec3::new(0.13, 0.19, 0.0)),
+    material::TANGERINE
+      .wedge(Vec3::new(0.14, 0.07, 0.10))
+      .at(TUB_DUCK + Vec3::new(0.27, 0.18, 0.0))
+  ]);
+
+  group([
+    cedar.rod(TUB_BORE, TUB_FLOOR).on(Vec3::ZERO).solid(),
+    water.rod(TUB_BORE - 0.06, TUB_WATER - TUB_FLOOR).on(Vec3::Y * TUB_FLOOR),
+    foam.ball(0.46).at(Vec3::new(-0.34, TUB_WATER, 0.52)),
+    foam.ball(0.30).at(Vec3::new(0.62, TUB_WATER - 0.02, 0.18)),
+    foam.ball(0.36).at(Vec3::new(0.08, TUB_WATER + 0.02, -0.54)),
+    water
+      .slab(Vec3::new(0.20, TUB_WATER - TUB_WEIR + 0.10, TUB_WIDE - 0.34))
+      .under(Vec3::new(-(TUB_RADIUS + 0.02), TUB_WATER - 0.02, 0.0))
+      .tilted(-0.18),
+    brass.slab(Vec3::new(0.34, 0.03, 0.18)).at(Vec3::new(
+      TUB_RADIUS + TUB_STAVE / 2.0 + 0.02,
+      0.50,
+      0.34
+    )),
+    brass.beam(0.86, 0.11).span(
+      TUB_PUMP + Vec3::new(-0.10, 0.34, -0.10),
+      around(-FRAC_PI_4, TUB_RADIUS) + Vec3::Y * 0.34
+    ),
+    brass.beam(0.86, 0.09).span(
+      TUB_PUMP + Vec3::new(-0.26, 0.62, -0.26),
+      around(-FRAC_PI_4, TUB_RADIUS) + Vec3::Y * TUB_HOOP_HIGH
+    )
+  ])
+  .into_iter()
+  .chain(ring)
+  .chain(bolts)
+  .chain(pump)
+  .chain(steps)
+  .chain(cover)
+  .chain(towel)
+  .chain(panel)
+  .chain(duck)
+  .collect()
+}
+
 fn bonfire_pile() -> Tree {
   let stick = sdf::rounded_box(Vec3::new(0.07, 0.62, 0.07), 0.055);
   let leaning = (0..7).map(|spoke| {
@@ -1051,6 +1238,15 @@ fn water_gradient() -> bevy_hanabi::Gradient<Vec4> {
   ])
 }
 
+fn steam_gradient() -> bevy_hanabi::Gradient<Vec4> {
+  bevy_hanabi::Gradient::from_keys([
+    (0.0, Vec4::new(0.94, 0.97, 0.99, 0.0)),
+    (0.2, Vec4::new(0.90, 0.95, 0.98, 0.30)),
+    (0.6, Vec4::new(0.84, 0.91, 0.96, 0.18)),
+    (1.0, Vec4::new(0.78, 0.87, 0.93, 0.0))
+  ])
+}
+
 fn frost_gradient() -> bevy_hanabi::Gradient<Vec4> {
   bevy_hanabi::Gradient::from_keys([
     (0.0, Vec4::new(0.60, 2.40, 4.60, 1.0)),
@@ -1134,6 +1330,19 @@ impl Plume {
     lift: -3.0,
     colors: frost_gradient,
     blend: bevy_hanabi::AlphaMode::Add
+  };
+
+  const STEAM: Self = Self {
+    name: "hot tub steam",
+    thrust: Vec3::new(0.0, 0.62, 0.0),
+    spread: 0.34,
+    source: 0.95,
+    girth: 0.66,
+    life: 2.6,
+    rate: 60.0,
+    lift: 0.30,
+    colors: steam_gradient,
+    blend: bevy_hanabi::AlphaMode::Blend
   };
 
   fn asset(self) -> EffectAsset {
@@ -1255,6 +1464,7 @@ pub struct MachineAssets {
   jet_flame: Handle<EffectAsset>,
   wash_spray: Handle<EffectAsset>,
   chill_frost: Handle<EffectAsset>,
+  tub_steam: Handle<EffectAsset>,
   chute_mesh: Handle<Mesh>,
   chute_material: Handle<StandardMaterial>,
   lens_mesh: Handle<Mesh>,
@@ -1438,6 +1648,7 @@ fn load_machine_assets(
     jet_flame: effects.add(Plume::JET.asset()),
     wash_spray: effects.add(Plume::WASH.asset()),
     chill_frost: effects.add(Plume::CHILL.asset()),
+    tub_steam: effects.add(Plume::STEAM.asset()),
     chute_mesh: meshes.add(Cuboid::new(CHUTE_REACH - 0.18, 0.44, 0.44)),
     chute_material: materials.add(StandardMaterial {
       base_color: Color::srgba(0.42, 0.86, 0.98, 0.30),
@@ -1658,6 +1869,26 @@ pub fn place(
         NoFrustumCulling,
         PointLight { color: EMBER_GLOW, intensity: 420_000.0, range: 14.0, ..default() },
         Transform::from_xyz(0.0, HEARTH_COALS, 0.0),
+        ChildOf(root)
+      ));
+    }
+    MachineKind::HotTub => {
+      commands.spawn((
+        Furnace,
+        Collider::cuboid(TUB_BORE, TUB_WATER + 0.5, TUB_BORE),
+        Sensor,
+        CollisionEventsEnabled,
+        Transform::from_xyz(0.0, TUB_FLOOR + (TUB_WATER + 0.5) / 2.0, 0.0),
+        ChildOf(root)
+      ));
+      commands.spawn((
+        ParticleEffect::new(assets.tub_steam.clone()),
+        Transform::from_xyz(0.0, TUB_WATER + 0.10, 0.0),
+        ChildOf(root)
+      ));
+      commands.spawn((
+        PointLight { color: TUB_GLOW, intensity: 220_000.0, range: 12.0, ..default() },
+        Transform::from_xyz(0.0, TUB_WATER - 0.12, 0.0),
         ChildOf(root)
       ));
     }

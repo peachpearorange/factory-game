@@ -112,6 +112,13 @@ pub const SHINGLE: Finish = Finish::new(Surface::Painted, rgb(0.96, 0.96, 0.94))
 pub const STRAW: Finish = Finish::new(Surface::Painted, rgb(0.92, 0.76, 0.36));
 pub const GLASS: Finish =
   Finish::new(Surface::Glass, LinearRgba::new(0.62, 0.78, 0.86, 0.34));
+pub const WATER: Finish =
+  Finish::new(Surface::Glass, LinearRgba::new(0.16, 0.56, 0.62, 0.52))
+    .lit(rgb(0.02, 0.12, 0.14));
+pub const FOAM: Finish =
+  Finish::new(Surface::Glass, LinearRgba::new(0.86, 0.95, 0.97, 0.40));
+pub const BUOY: Finish = Finish::new(Surface::Plastic, rgb(0.98, 0.76, 0.06));
+pub const TANGERINE: Finish = Finish::new(Surface::Plastic, rgb(0.96, 0.44, 0.06));
 pub const CANVAS: Finish = Finish::new(Surface::Cloth, rgb(0.90, 0.88, 0.82));
 pub const SILK: Finish = Finish::new(Surface::Cloth, rgb(0.94, 0.94, 0.90));
 pub const SIGNAL: Finish = Finish::new(Surface::Cloth, rgb(0.96, 0.38, 0.10));
