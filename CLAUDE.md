@@ -14,6 +14,59 @@ machines placed on a grid. standard conveyor belt is 2x2 in the grid. hitboxes o
 # Code
 avoid comments. just have code self-explanatory by names and structure. concise. use let chains. if there's repetition, make helpers.
 
+# Designing Machines
+Models are written in code. There are no mesh assets. Build out of parts by default.
+
+Parts are not just boxes. Rods and balls, wedges for roofs, ramps and prows, free rotation on every axis, `span` between two points, and `ringed`/`repeated` copies will give you barrels, domes, cones, arches, spirals, fans of blades, tapers stacked out of shrinking slabs — curves and organic masses included, in the faceted Roblox way that suits this game. Reach for an SDF only when a shape genuinely needs smooth blending between volumes, and never fight the SDF to get a shape parts would have given you.
+
+Materials all live in `material.rs`. A `Finish` is a surface (Painted, Plastic, Rock, Wood, Planked, Metal, Glass, Cloth) plus a colour and a glow, and the named consts — `TIMBER`, `STONE`, `GOLD`, `BRASS`, `SOOT`, `GLASS` and the rest — are the palette. Add to that palette rather than declaring a loose `LinearRgba` next to a builder. Derive variants with `.tinted()`, `.shaded()`, `.lit()`, `.veiled()`. Alias the ones a machine uses at the top of its builder:
+
+```rust
+let (stone, gold, timber) = (material::STONE, material::GOLD, material::TIMBER);
+```
+
+The finish is the constructor, so a part can never lose its material:
+
+```rust
+stone.slab(Vec3::new(1.70, 0.70, 2.90)).on(Vec3::new(-1.15, MINE_CREST, 0.0)).solid()
+timber.beam(MINE_HEAD - MINE_DECK, 0.14).span(foot, head)
+material::STEEL.rod(0.48, 0.12).at(hoist).rolled(FRAC_PI_2)
+```
+
+Forms are `slab`, `cube`, `beam`, `rod`, `ball`, `wedge`, plus `faces` and `shell` when a shape wants coordinates of its own:
+
+```rust
+stone.faces([
+  vec![low, east, north],
+  vec![low, peak, east],
+  vec![east, peak, north],
+  vec![north, peak, low]
+])
+```
+
+`faces` takes polygons — any number of corners each, fan-triangulated and flat-shaded — and `shell` takes a flat run of points read three at a time as triangles. Wind each face counter-clockwise seen from outside; the normal comes from the winding, so a reversed face turns invisible under back-face culling. The part's size is the bounding box of the points, so `on`, `under` and `span` keep working, and resizing scales the points. Its collider is the convex hull, so author a concave shape as several `.solid()` parts.
+
+Sizes are full extents, never halves. Place with `at` (centre), `on` (bottom rests here), `under` (top hangs here) or `span(a, b)` (stretches between two points, working out length and rotation itself — use it for braces, ladders, cables, anything diagonal). Then `.solid()` for a collider, `.tilted/.rolled/.turned/.spun` to rotate.
+
+Never write the same part twice. `group([...])` makes an Assembly that folds its transform into its parts:
+
+```rust
+group([timber.beam(CHUTE_FLOOR, 0.14).on(Vec3::new(0.46, 0.0, 0.50))])
+  .mirrored(Axis::X)
+  .mirrored(Axis::Z)
+  .at(Vec3::X * DROPPER_BACK)
+```
+
+`mirrored(axis)` is a true reflection, so a tilted roof mirrors its tilt. `repeated(n, step)` gives runs of sleepers, rivets, palings. `ringed(n, radius)` gives bolt circles, spokes, staves. A sub-assembly — a cart, a winch, a chimney — should be its own `fn -> Assembly` that the machine places and rotates as a unit.
+
+Name every dimension as a machine-prefixed `SCREAMING_SNAKE` const at file level, and name builders and closures after the physical object (`gold_mine`, `trestle`, `jamb`, `mast`, `yoke`).
+
+The machine itself is one `#[assoc(...)]` block on a `MachineKind` variant, appended to `MachineKind::ALL`. `parts` for a built model, `shape` + `paint` for an SDF one, `finish` for its surface. Local origin is at ground and at the footprint centre; `CELL` is 2.0 and `footprint` counts cells. Belts run along +X: set `carries_belt` and include `belt_deck(belt_half(cells))`, and `place()` adds the belt, slats and upgrader sensor. Non-mesh trimmings — lights, particles, glass, SDF colliders — go in the per-kind match in `place()`.
+
+Do not be lazy. A machine that is a box with a pipe on it is a failure. Put the effort in: legs and footplates, bracing and gussets, rivets and bolt circles, hinges, ladders, railings, handwheels, gauges and dials, vents, chains, warning stripes, a maker's plate, pipework that actually goes somewhere, wear and soot where wear and soot belong. Use the whole palette in one machine — timber against iron against brass against glass — because per-part materials are what make it read as a built object. Go extravagant and characterful over clean and minimal every time. The parts API is cheap; there is no excuse for a plain model.
+
+Then look at it. `tools/showcase <name>` writes twelve shots, read them, and adjust the consts. A model that reads fine in code is routinely wrong in silhouette, so never call one finished without seeing it.
+
 # Notes
 `world::GROUND` is y = 0, the exact top of the concrete platform. Author every shape and spawn position relative to it so meshes rest on the ground.
 

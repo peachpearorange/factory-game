@@ -8,8 +8,7 @@ use {crate::{material::{Coat, Coats, Finish},
             math::Affine3A,
             mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
             prelude::*},
-     enum_assoc::Assoc,
-     std::f32::consts::TAU};
+     std::{f32::consts::TAU, sync::Arc}};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
@@ -40,26 +39,45 @@ fn wedge_corners(size: Vec3) -> [Vec3; 6] {
   ]
 }
 
-fn wedge_mesh(size: Vec3) -> Mesh {
+fn wedge_faces(size: Vec3) -> Vec<Vec<Vec3>> {
   let [back_low, front_low, front_high, near_low, near_front, near_high] =
     wedge_corners(size);
-  let slope = Vec3::new(-size.y, size.x, 0.0).normalize();
-  let faces = [
-    (vec![back_low, front_low, near_front, near_low], Vec3::NEG_Y),
-    (vec![front_low, front_high, near_high, near_front], Vec3::X),
-    (vec![back_low, near_low, near_high, front_high], slope),
-    (vec![near_low, near_front, near_high], Vec3::Z),
-    (vec![back_low, front_high, front_low], Vec3::NEG_Z)
-  ];
-  let mut positions = Vec::new();
+  vec![
+    vec![back_low, front_low, near_front, near_low],
+    vec![front_low, front_high, near_high, near_front],
+    vec![back_low, near_low, near_high, front_high],
+    vec![near_low, near_front, near_high],
+    vec![back_low, front_high, front_low],
+  ]
+}
+
+fn facing(corners: &[Vec3]) -> Vec3 {
+  corners
+    .iter()
+    .zip(corners.iter().cycle().skip(1))
+    .fold(Vec3::ZERO, |sum, (&here, &next)| {
+      sum
+        + Vec3::new(
+          (here.y - next.y) * (here.z + next.z),
+          (here.z - next.z) * (here.x + next.x),
+          (here.x - next.x) * (here.y + next.y)
+        )
+    })
+    .try_normalize()
+    .unwrap_or(Vec3::Y)
+}
+
+fn faced(faces: &[Vec<Vec3>], scale: Vec3) -> Mesh {
+  let mut positions: Vec<Vec3> = Vec::new();
   let mut normals = Vec::new();
   let mut indices = Vec::new();
-  for (corners, normal) in faces {
+  for corners in faces.iter().filter(|corners| corners.len() > 2) {
+    let corners: Vec<Vec3> = corners.iter().map(|&corner| corner * scale).collect();
     let base = positions.len() as u32;
     for corner in 2..corners.len() as u32 {
       indices.extend([base, base + corner - 1, base + corner]);
     }
-    normals.extend(std::iter::repeat_n(normal, corners.len()));
+    normals.extend(std::iter::repeat_n(facing(&corners), corners.len()));
     positions.extend(corners);
   }
   Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
@@ -68,33 +86,57 @@ fn wedge_mesh(size: Vec3) -> Mesh {
     .with_inserted_indices(Indices::U32(indices))
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Assoc)]
-#[func(fn mesh(self, size: Vec3) -> Mesh)]
-#[func(fn collider(self, size: Vec3) -> Collider)]
-pub enum Form {
-  #[assoc(
-    mesh = Cuboid::from_size(size.abs()).mesh().build(),
-    collider = Collider::cuboid(size.x.abs(), size.y.abs(), size.z.abs())
-  )]
-  Slab,
-  #[assoc(
-    mesh = Cylinder::new(size.x.abs() / 2.0, size.y.abs()).mesh().build(),
-    collider = Collider::cylinder(size.x.abs() / 2.0, size.y.abs())
-  )]
-  Rod,
-  #[assoc(
-    mesh = Sphere::new(size.x.abs() / 2.0).mesh().ico(3).expect("ball mesh"),
-    collider = Collider::sphere(size.x.abs() / 2.0)
-  )]
-  Ball,
-  #[assoc(
-    mesh = wedge_mesh(size),
-    collider = Collider::convex_hull(wedge_corners(size).into()).expect("wedge hull")
-  )]
-  Wedge
+fn spread(faces: &[Vec<Vec3>]) -> Vec3 {
+  let corners = || faces.iter().flatten().copied();
+  let low = corners().fold(Vec3::MAX, Vec3::min);
+  let high = corners().fold(Vec3::MIN, Vec3::max);
+  (high - low).max(Vec3::splat(f32::EPSILON))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, PartialEq)]
+pub enum Form {
+  Slab,
+  Rod,
+  Ball,
+  Wedge,
+  Faces(Arc<Vec<Vec<Vec3>>>)
+}
+
+impl Form {
+  fn mesh(&self, size: Vec3) -> Mesh {
+    let Vec3 { x, y, .. } = size.abs();
+    match self {
+      Self::Slab => Cuboid::from_size(size.abs()).mesh().build(),
+      Self::Rod => Cylinder::new(x / 2.0, y).mesh().build(),
+      Self::Ball => Sphere::new(x / 2.0).mesh().ico(3).expect("ball mesh"),
+      Self::Wedge => faced(&wedge_faces(size), Vec3::ONE),
+      Self::Faces(faces) => faced(faces, size / spread(faces))
+    }
+  }
+
+  fn corners(&self, size: Vec3) -> Vec<Vec3> {
+    let scale = match self {
+      Self::Faces(faces) => size / spread(faces),
+      _ => Vec3::ONE
+    };
+    match self {
+      Self::Faces(faces) => faces.iter().flatten().map(|&at| at * scale).collect(),
+      _ => wedge_corners(size).into()
+    }
+  }
+
+  fn collider(&self, size: Vec3) -> Collider {
+    let Vec3 { x, y, z } = size.abs();
+    match self {
+      Self::Slab => Collider::cuboid(x, y, z),
+      Self::Rod => Collider::cylinder(x / 2.0, y),
+      Self::Ball => Collider::sphere(x / 2.0),
+      _ => Collider::convex_hull(self.corners(size)).expect("part hull")
+    }
+  }
+}
+
+#[derive(Clone)]
 pub struct Part {
   form: Form,
   size: Vec3,
@@ -106,27 +148,41 @@ pub struct Part {
 }
 
 impl Finish {
-  pub const fn slab(self, size: Vec3) -> Part { Part::new(Form::Slab, size, self) }
+  pub fn slab(self, size: Vec3) -> Part { Part::new(Form::Slab, size, self) }
 
-  pub const fn cube(self, size: f32) -> Part { self.slab(Vec3::splat(size)) }
+  pub fn cube(self, size: f32) -> Part { self.slab(Vec3::splat(size)) }
 
-  pub const fn beam(self, long: f32, thick: f32) -> Part {
+  pub fn beam(self, long: f32, thick: f32) -> Part {
     self.slab(Vec3::new(thick, long, thick))
   }
 
-  pub const fn rod(self, across: f32, long: f32) -> Part {
+  pub fn rod(self, across: f32, long: f32) -> Part {
     Part::new(Form::Rod, Vec3::new(across, long, across), self)
   }
 
-  pub const fn ball(self, across: f32) -> Part {
+  pub fn ball(self, across: f32) -> Part {
     Part::new(Form::Ball, Vec3::splat(across), self)
   }
 
-  pub const fn wedge(self, size: Vec3) -> Part { Part::new(Form::Wedge, size, self) }
+  pub fn wedge(self, size: Vec3) -> Part { Part::new(Form::Wedge, size, self) }
+
+  pub fn faces(
+    self,
+    faces: impl IntoIterator<Item = impl IntoIterator<Item = Vec3>>
+  ) -> Part {
+    let faces: Vec<Vec<Vec3>> =
+      faces.into_iter().map(|corners| corners.into_iter().collect()).collect();
+    Part::new(Form::Faces(Arc::new(faces.clone())), spread(&faces), self)
+  }
+
+  pub fn shell(self, corners: impl IntoIterator<Item = Vec3>) -> Part {
+    let corners: Vec<Vec3> = corners.into_iter().collect();
+    self.faces(corners.chunks_exact(3).map(<[Vec3]>::to_vec))
+  }
 }
 
 impl Part {
-  const fn new(form: Form, size: Vec3, finish: Finish) -> Self {
+  fn new(form: Form, size: Vec3, finish: Finish) -> Self {
     Self {
       form,
       size,
@@ -138,12 +194,16 @@ impl Part {
     }
   }
 
-  pub const fn at(self, at: Vec3) -> Self { Self { at, ..self } }
+  pub fn at(self, at: Vec3) -> Self { Self { at, ..self } }
 
-  pub fn on(self, floor: Vec3) -> Self { self.at(floor + Vec3::Y * self.size.y / 2.0) }
+  pub fn on(self, floor: Vec3) -> Self {
+    let rise = Vec3::Y * self.size.y / 2.0;
+    self.at(floor + rise)
+  }
 
   pub fn under(self, ceiling: Vec3) -> Self {
-    self.at(ceiling - Vec3::Y * self.size.y / 2.0)
+    let drop = Vec3::Y * self.size.y / 2.0;
+    self.at(ceiling - drop)
   }
 
   pub fn span(self, from: Vec3, to: Vec3) -> Self {
@@ -164,20 +224,23 @@ impl Part {
 
   pub fn turned(self, angle: f32) -> Self { self.spun(Quat::from_rotation_y(angle)) }
 
-  pub const fn solid(self) -> Self { Self { solid: true, ..self } }
+  pub fn solid(self) -> Self { Self { solid: true, ..self } }
 
-  pub const fn finished(self, finish: Finish) -> Self { Self { finish, ..self } }
+  pub fn finished(self, finish: Finish) -> Self { Self { finish, ..self } }
 
-  pub const fn tinted(self, color: LinearRgba) -> Self {
-    self.finished(self.finish.tinted(color))
+  pub fn tinted(self, color: LinearRgba) -> Self {
+    let finish = self.finish.tinted(color);
+    self.finished(finish)
   }
 
-  pub const fn shaded(self, amount: f32) -> Self {
-    self.finished(self.finish.shaded(amount))
+  pub fn shaded(self, amount: f32) -> Self {
+    let finish = self.finish.shaded(amount);
+    self.finished(finish)
   }
 
-  pub const fn lit(self, glow: LinearRgba) -> Self {
-    self.finished(self.finish.lit(glow))
+  pub fn lit(self, glow: LinearRgba) -> Self {
+    let finish = self.finish.lit(glow);
+    self.finished(finish)
   }
 
   fn framed(self, by: Affine3A) -> Self { Self { frame: by * self.frame, ..self } }
@@ -252,7 +315,7 @@ impl Assembly {
       frames
         .into_iter()
         .flat_map(|frame| {
-          self.0.iter().map(move |&part| part.framed(frame)).collect::<Vec<_>>()
+          self.0.iter().cloned().map(move |part| part.framed(frame)).collect::<Vec<_>>()
         })
         .collect()
     )
@@ -380,10 +443,45 @@ pub fn whole(coats: &[(Coat, Mesh)]) -> Mesh {
 mod tests {
   use super::*;
 
+  fn outwards(mesh: &Mesh, inside: Vec3) {
+    let points = sdf::points(mesh);
+    let normals: Vec<Vec3> = mesh
+      .attribute(Mesh::ATTRIBUTE_NORMAL)
+      .and_then(VertexAttributeValues::as_float3)
+      .expect("face normals")
+      .iter()
+      .map(|&normal| Vec3::from(normal))
+      .collect();
+    let Some(Indices::U32(indices)) = mesh.indices() else { panic!("face indices") };
+    for corners in indices.chunks_exact(3) {
+      let [a, b, c] = [0, 1, 2].map(|corner| points[corners[corner] as usize]);
+      let facing = (b - a).cross(c - a).normalize();
+      assert!(facing.dot(normals[corners[0] as usize]) > 0.99);
+      assert!(facing.dot(a - inside) > 0.0);
+    }
+  }
+
+  #[test]
+  fn authored_faces_point_outwards() {
+    let [low, east, north, peak] = [
+      Vec3::new(-0.5, 0.0, -0.5),
+      Vec3::new(0.7, 0.0, -0.4),
+      Vec3::new(0.0, 0.0, 0.8),
+      Vec3::new(0.1, 1.2, 0.0)
+    ];
+    let pyramid = crate::material::STONE.faces([
+      vec![low, east, north],
+      vec![low, peak, east],
+      vec![east, peak, north],
+      vec![north, peak, low]
+    ]);
+    outwards(&pyramid.mesh(), [low, east, north, peak].iter().sum::<Vec3>() / 4.0);
+  }
+
   #[test]
   fn wedge_faces_point_outwards() {
     let size = Vec3::new(1.4, 0.8, 2.0);
-    let mesh = wedge_mesh(size);
+    let mesh = Form::Wedge.mesh(size);
     let points = sdf::points(&mesh);
     let normals: Vec<Vec3> = mesh
       .attribute(Mesh::ATTRIBUTE_NORMAL)
