@@ -1,4 +1,4 @@
-use {crate::ore::{Effects, GIRTH_CAP, Ore, OreAssets, OreForm, OreLimit},
+use {crate::ore::{Effects, GIRTH_CAP, Ore, OreAssets, OreForm, OreLimit, SEAT},
      avian3d::prelude::*,
      bevy::{ecs::{entity::EntityHashSet,
                   system::{SystemParam, lifetimeless::Read}},
@@ -125,8 +125,10 @@ fn upgrade_ores(
     {
       ore.value *= upgrader.multiplier;
       ore.effects = ore.effects.with(upgrader.effects);
-      ore.girth = (ore.girth * upgrader.growth).min(GIRTH_CAP);
+      let grown = (ore.girth * upgrader.growth).min(GIRTH_CAP);
       material.0 = assets.material(ore.form, ore.effects);
+      transform.translation.y += SEAT * (grown - ore.girth);
+      ore.girth = grown;
       transform.scale = Vec3::splat(ore.girth);
       collider.set_scale(Vec3::splat(ore.girth), GIRTH_DETAIL);
     }

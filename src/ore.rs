@@ -1,10 +1,10 @@
-use {crate::{sdf, world::GROUND},
+use {crate::{catalog::BELT_TOP, sdf, world::GROUND},
      avian3d::prelude::*,
      bevy::prelude::*,
      enum_assoc::Assoc,
      fidget::context::Tree};
 
-const SETTLED: f32 = 0.42;
+pub const SEAT: f32 = 0.28;
 const FADE: f32 = 2.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -212,7 +212,7 @@ fn fade_dropped_ores(
   mut commands: Commands
 ) {
   for (entity, ore, transform, mut painted, fading) in &mut ores {
-    let floored = transform.translation.y < GROUND + SETTLED * ore.girth;
+    let floored = transform.translation.y < GROUND + SEAT * ore.girth + BELT_TOP / 2.0;
     let recovered = !floored && fading.is_some();
     if floored && let Some(mut fading) = fading {
       let left = 1.0 - fading.0.tick(time.delta()).fraction();
