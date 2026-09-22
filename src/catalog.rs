@@ -64,6 +64,28 @@ const TUB_COVER_WAY: f32 = FRAC_PI_4;
 const TUB_COVER_OUT: f32 = 1.70;
 const TUB_DUCK: Vec3 = Vec3::new(0.46, TUB_WATER, -0.62);
 const TUB_GLOW: Color = Color::srgb(0.46, 0.90, 0.96);
+const PAIL_LEG: f32 = -0.62;
+const PAIL_LEG_THICK: f32 = 0.16;
+const PAIL_SPAN: f32 = 0.92;
+const PAIL_HEAD: f32 = 2.30;
+const PAIL_TIE: f32 = 1.16;
+const PAIL_SPOUT: Vec3 = Vec3::new(0.16, 1.46, 0.0);
+const PAIL_TIP: f32 = 0.92;
+const PAIL_DEEP: f32 = 1.12;
+const PAIL_BORE: f32 = 1.00;
+const PAIL_FOOT: f32 = 0.62;
+const PAIL_SIDES: u32 = 10;
+const PAIL_FACET: f32 = 0.34;
+const PAIL_CHEEK: f32 = 0.52;
+const PAIL_TRUNNION: f32 = 0.52;
+const PAIL_WHEEL: f32 = 0.24;
+const PAIL_TEETH: u32 = 20;
+const PAIL_QUADRANT: u32 = 7;
+const PAIL_TANK_BORE: f32 = 0.54;
+const PAIL_TANK_LONG: f32 = 1.16;
+const PAIL_TANK_RISE: f32 = 0.42;
+const PAIL_PAN: Vec3 = Vec3::new(-0.92, 0.70, 0.0);
+const PAIL_SPLASH: f32 = BELT_TOP + 0.03;
 const JET_HEIGHT: f32 = BELT_TOP + 0.42;
 const DROPPER_BACK: f32 = -0.42;
 const CHUTE_FLOOR: f32 = 1.16;
@@ -270,6 +292,17 @@ pub enum MachineKind {
   )]
   Orewash,
   #[assoc(
+    name = "Yellow Paint Bucket",
+    blurb = "A pail of yellow gloss tipped over the belt on a jib. Anything that \
+             crawls through the pour comes out yellow, and yellow sells better.",
+    price = 800.0,
+    tier = Tier::Refined,
+    carries_belt = true,
+    upgrade = stamps(3.4, Effects::YELLOW),
+    parts = paint_bucket().parts()
+  )]
+  PaintBucket,
+  #[assoc(
     name = "Chill Beam",
     blurb = "A long frost gantry. The beam rimes whatever crawls beneath it.",
     price = 1500.0,
@@ -347,7 +380,7 @@ pub enum MachineKind {
 }
 
 impl MachineKind {
-  pub const ALL: [Self; 17] = [
+  pub const ALL: [Self; 18] = [
     Self::Conveyor,
     Self::Dropper,
     Self::Coop,
@@ -358,6 +391,7 @@ impl MachineKind {
     Self::FlameJet,
     Self::MistCoil,
     Self::Orewash,
+    Self::PaintBucket,
     Self::ChillBeam,
     Self::DecayChamber,
     Self::Embiggener,
@@ -402,6 +436,275 @@ fn belt_deck(half: f32) -> Tree {
     rail(1.0),
     rail(-1.0)
   ])
+}
+
+fn belt_bed(half: f32) -> Assembly {
+  let band = Vec3::new(
+    (half - BELT_CURVE) * 2.0,
+    (BELT_CURVE - 0.008) * 2.0,
+    (SLAT_HALF - 0.04) * 2.0
+  );
+  let drums = group([material::STEEL
+    .rod(band.y, band.z)
+    .at(Vec3::new(half - BELT_CURVE, BELT_MID, 0.0))
+    .rolled(FRAC_PI_2)])
+  .mirrored(Axis::X);
+  let rails = group([material::IRON
+    .slab(Vec3::new(half * 2.0, RAIL_TOP, 0.12))
+    .on(Vec3::new(0.0, 0.0, 0.95))])
+  .mirrored(Axis::Z);
+
+  group([material::RUBBER.slab(band).at(Vec3::Y * BELT_MID)]).with(drums).with(rails)
+}
+
+fn paint_bucket() -> Assembly {
+  let (steel, iron, brass) = (material::STEEL, material::IRON, material::BRASS);
+  let (paint, enamel, soot) = (material::PAINT, material::ENAMEL, material::SOOT);
+
+  let tip = Quat::from_rotation_z(-PAIL_TIP);
+  let heel = PAIL_SPOUT - tip * Vec3::new(PAIL_BORE / 2.0, PAIL_DEEP, 0.0);
+  let hinge = heel + tip * (Vec3::Y * PAIL_TRUNNION);
+  let mouth = heel + tip * (Vec3::Y * PAIL_DEEP);
+  let yoke = Vec3::new(PAIL_LEG, PAIL_HEAD - 0.14, 0.0);
+  let tank = Vec3::new(PAIL_LEG, PAIL_HEAD + PAIL_TANK_RISE, 0.0);
+
+  let girth = |rise: f32| (PAIL_FOOT + (PAIL_BORE - PAIL_FOOT) * rise / PAIL_DEEP) / 2.0;
+  let hoop = |rise: f32, thick: f32| {
+    group([brass
+      .slab(Vec3::new(0.05, thick, PAIL_FACET))
+      .at(Vec3::X * (girth(rise) + 0.01))])
+    .ringed(PAIL_SIDES, 0.0)
+    .at(Vec3::Y * rise)
+  };
+  let lugs = group([
+    steel.slab(Vec3::new(0.24, 0.32, 0.10)).at(Vec3::new(
+      0.0,
+      PAIL_TRUNNION,
+      girth(PAIL_TRUNNION) + 0.03
+    )),
+    brass
+      .rod(0.11, 0.40)
+      .at(Vec3::new(0.0, PAIL_TRUNNION, girth(PAIL_TRUNNION) + 0.21))
+      .rolled(FRAC_PI_2)
+  ])
+  .mirrored(Axis::Z);
+  let bail = group([brass.beam(0.4, 0.05).span(
+    Vec3::new(-0.06, PAIL_DEEP - 0.20, girth(PAIL_DEEP - 0.20) - 0.02),
+    Vec3::new(-PAIL_BORE / 2.0 - 0.16, PAIL_DEEP + 0.16, 0.0)
+  )])
+  .mirrored(Axis::Z);
+  let dribble = |across: f32, drop: f32| {
+    enamel.slab(Vec3::new(0.06, drop, 0.11)).under(Vec3::new(
+      girth(PAIL_DEEP) - 0.02,
+      PAIL_DEEP - 0.07,
+      across
+    ))
+  };
+  let pail = group([
+    paint.tapered(PAIL_FOOT, PAIL_BORE, PAIL_DEEP, PAIL_SIDES).on(Vec3::ZERO),
+    enamel
+      .tapered(PAIL_BORE - 0.05, PAIL_BORE - 0.05, 0.06, PAIL_SIDES)
+      .under(Vec3::Y * (PAIL_DEEP - 0.01)),
+    brass.tapered(PAIL_FOOT + 0.09, PAIL_FOOT + 0.09, 0.08, PAIL_SIDES).on(Vec3::ZERO),
+    dribble(0.13, 0.42),
+    dribble(-0.19, 0.25),
+    dribble(0.30, 0.14),
+    material::GRIT.slab(Vec3::new(0.04, 0.46, 0.24)).under(Vec3::new(
+      -girth(PAIL_DEEP * 0.72),
+      PAIL_DEEP * 0.72,
+      0.0
+    )),
+    soot.slab(Vec3::new(0.28, 0.19, 0.03)).at(Vec3::new(
+      0.0,
+      PAIL_DEEP / 2.0,
+      girth(PAIL_DEEP / 2.0) - 0.01
+    ))
+  ])
+  .with(hoop(PAIL_DEEP - 0.09, 0.10))
+  .with(hoop(0.34, 0.08))
+  .with(lugs)
+  .with(bail)
+  .tilted(-PAIL_TIP)
+  .at(heel);
+
+  let stripes = group([soot
+    .slab(Vec3::new(PAIL_LEG_THICK + 0.02, 0.14, PAIL_LEG_THICK + 0.02))
+    .on(Vec3::new(PAIL_LEG, 0.24, PAIL_SPAN))])
+  .repeated(3, Vec3::Y * 0.28);
+  let footbolts =
+    group([brass.cube(0.07)]).ringed(6, 0.18).at(Vec3::new(PAIL_LEG, 0.13, PAIL_SPAN));
+  let leg = group([
+    iron
+      .slab(Vec3::new(0.46, 0.10, 0.26))
+      .on(Vec3::new(PAIL_LEG, 0.0, PAIL_SPAN))
+      .solid(),
+    steel
+      .beam(PAIL_HEAD - 0.10, PAIL_LEG_THICK)
+      .on(Vec3::new(PAIL_LEG, 0.10, PAIL_SPAN))
+      .solid(),
+    steel.beam(0.6, 0.09).span(
+      Vec3::new(PAIL_LEG + 0.46, 0.14, PAIL_SPAN),
+      Vec3::new(PAIL_LEG + 0.02, PAIL_HEAD - 0.70, PAIL_SPAN)
+    ),
+    steel.slab(Vec3::new(0.34, 0.09, 0.22)).at(Vec3::new(
+      PAIL_LEG + 0.10,
+      PAIL_TIE,
+      PAIL_SPAN
+    ))
+  ])
+  .with(stripes)
+  .with(footbolts)
+  .mirrored(Axis::Z);
+  let rungs = group([steel
+    .rod(0.05, 0.36)
+    .at(Vec3::new(PAIL_LEG - 0.13, 0.62, PAIL_SPAN))
+    .rolled(FRAC_PI_2)])
+  .repeated(5, Vec3::Y * 0.34);
+  let gantry = group([
+    steel
+      .slab(Vec3::new(0.24, 0.16, PAIL_SPAN * 2.0 + 0.22))
+      .under(Vec3::new(PAIL_LEG, PAIL_HEAD, 0.0)),
+    steel.slab(Vec3::new(0.14, 0.12, PAIL_SPAN * 2.0)).at(Vec3::new(
+      PAIL_LEG + 0.14,
+      PAIL_TIE,
+      0.0
+    )),
+    brass.slab(Vec3::new(0.26, 0.18, 0.03)).at(Vec3::new(
+      PAIL_LEG,
+      1.62,
+      PAIL_SPAN - 0.10
+    )),
+    steel.slab(Vec3::new(0.30, 0.10, PAIL_CHEEK * 2.0 + 0.26)).at(yoke)
+  ])
+  .with(leg)
+  .with(rungs);
+
+  let cheeks = group([steel
+    .slab(Vec3::new(0.30, 0.0, 0.08))
+    .span(yoke + Vec3::Z * PAIL_CHEEK, hinge + Vec3::Z * PAIL_CHEEK)])
+  .mirrored(Axis::Z);
+  let handwheel = group([brass.rod(0.15, 0.12)])
+    .with(
+      group([iron
+        .slab(Vec3::new(PAIL_WHEEL, 0.05, 0.05))
+        .at(Vec3::X * PAIL_WHEEL / 2.0)])
+      .ringed(5, 0.0)
+    )
+    .with(group([iron.slab(Vec3::new(0.08, 0.07, 0.15))]).ringed(12, PAIL_WHEEL))
+    .rolled(FRAC_PI_2)
+    .at(hinge + Vec3::Z * (PAIL_CHEEK + 0.20));
+  let ratchet = part::ring(PAIL_TEETH, |tooth| {
+    group([(tooth < PAIL_QUADRANT)
+      .then(|| iron.slab(Vec3::new(0.10, 0.05, 0.08)).at(Vec3::X * 0.36))])
+  })
+  .with(iron.slab(Vec3::new(0.60, 0.06, 0.07)).at(Vec3::ZERO))
+  .rolled(FRAC_PI_2)
+  .at(hinge - Vec3::Z * (PAIL_CHEEK + 0.09));
+  let pawl = iron.beam(0.3, 0.06).span(
+    hinge + Vec3::new(0.0, 0.36, -PAIL_CHEEK - 0.09),
+    hinge + Vec3::new(0.34, 0.04, -PAIL_CHEEK - 0.09)
+  );
+
+  let saddle = group([steel
+    .slab(Vec3::new(0.10, PAIL_TANK_RISE, PAIL_TANK_BORE))
+    .on(Vec3::new(PAIL_LEG, PAIL_HEAD, PAIL_TANK_LONG / 2.0 - 0.14))])
+  .mirrored(Axis::Z);
+  let hoops = group([brass
+    .rod(PAIL_TANK_BORE + 0.05, 0.06)
+    .at(tank + Vec3::Z * (PAIL_TANK_LONG / 2.0 - 0.22))
+    .rolled(FRAC_PI_2)])
+  .mirrored(Axis::Z);
+  let reservoir = group([
+    material::BARN.rod(PAIL_TANK_BORE, PAIL_TANK_LONG).at(tank).rolled(FRAC_PI_2),
+    material::BARN
+      .shaded(0.7)
+      .rod(PAIL_TANK_BORE - 0.02, 0.05)
+      .at(tank + Vec3::Z * PAIL_TANK_LONG / 2.0)
+      .rolled(FRAC_PI_2),
+    brass.rod(0.20, 0.10).on(tank + Vec3::new(0.0, PAIL_TANK_BORE / 2.0 - 0.02, 0.10)),
+    material::GLASS
+      .slab(Vec3::new(0.05, 0.36, 0.12))
+      .at(tank + Vec3::new(0.26, 0.0, 0.0)),
+    paint.slab(Vec3::new(0.04, 0.20, 0.10)).at(tank + Vec3::new(0.27, -0.08, 0.0)),
+    soot.slab(Vec3::new(0.22, 0.18, 0.03)).at(tank + Vec3::new(0.0, 0.10, -0.30))
+  ])
+  .with(saddle)
+  .with(hoops);
+
+  let spigot = tank - Vec3::Y * (PAIL_TANK_BORE / 2.0);
+  let elbow = Vec3::new(mouth.x, spigot.y - 0.14, 0.0);
+  let nozzle = Vec3::new(mouth.x, mouth.y + 0.34, 0.0);
+  let pipe = |from: Vec3, to: Vec3| brass.beam(0.5, 0.10).span(from, to);
+  let valve = group([brass.slab(Vec3::new(0.18, 0.05, 0.05)).at(Vec3::X * 0.10)])
+    .ringed(4, 0.0)
+    .at(spigot - Vec3::Y * 0.20);
+  let plumbing = group([
+    pipe(spigot, elbow),
+    pipe(elbow, nozzle),
+    brass.ball(0.15).at(elbow),
+    brass.rod(0.19, 0.24).under(nozzle),
+    enamel.rod(0.09, 0.18).under(nozzle - Vec3::Y * 0.22),
+    brass.rod(0.09, 0.22).at(spigot - Vec3::Y * 0.20)
+  ])
+  .with(valve);
+
+  let hanger = group([steel.beam(0.4, 0.06).span(
+    Vec3::new(PAIL_LEG, PAIL_TIE, PAIL_SPAN - 0.30),
+    PAIL_PAN + Vec3::new(0.10, 0.06, 0.34)
+  )])
+  .mirrored(Axis::Z);
+  let pan = group([
+    iron.slab(Vec3::new(0.52, 0.06, 0.78)).under(PAIL_PAN),
+    enamel.slab(Vec3::new(0.44, 0.09, 0.70)).under(PAIL_PAN - Vec3::Y * 0.02),
+    paint.ball(0.11).at(PAIL_PAN + Vec3::new(0.10, 0.03, -0.22))
+  ])
+  .with(
+    group([iron
+      .slab(Vec3::new(0.52, 0.16, 0.05))
+      .on(PAIL_PAN + Vec3::new(0.0, -0.06, 0.365))])
+    .mirrored(Axis::Z)
+  )
+  .with(
+    iron.slab(Vec3::new(0.05, 0.16, 0.78)).on(PAIL_PAN + Vec3::new(-0.235, -0.06, 0.0))
+  )
+  .with(hanger);
+
+  let pour = group([
+    enamel.tapered(0.18, 0.34, PAIL_SPOUT.y - PAIL_SPLASH, 8).on(Vec3::new(
+      PAIL_SPOUT.x,
+      PAIL_SPLASH,
+      0.0
+    )),
+    enamel.ball(0.14).at(PAIL_SPOUT + Vec3::new(0.21, -0.42, 0.17)),
+    enamel.ball(0.10).at(PAIL_SPOUT + Vec3::new(-0.13, -0.86, -0.08)),
+    enamel.tapered(0.74, 0.62, 0.04, 8).on(Vec3::new(PAIL_SPOUT.x, PAIL_SPLASH, 0.0)),
+    enamel.tapered(0.38, 0.30, 0.03, 7).on(Vec3::new(
+      PAIL_SPOUT.x + 0.42,
+      PAIL_SPLASH,
+      -0.20
+    )),
+    enamel.tapered(0.26, 0.20, 0.03, 6).on(Vec3::new(
+      PAIL_SPOUT.x - 0.38,
+      PAIL_SPLASH,
+      0.28
+    )),
+    paint.slab(Vec3::new(0.36, 0.04, 0.13)).on(Vec3::new(
+      0.30,
+      RAIL_TOP,
+      PAIL_SPAN + 0.03
+    )),
+    paint.slab(Vec3::new(0.24, 0.04, 0.13)).on(Vec3::new(
+      -0.40,
+      RAIL_TOP,
+      -PAIL_SPAN - 0.03
+    ))
+  ]);
+
+  group([belt_bed(belt_half(1)), pail, gantry, cheeks, handwheel, ratchet, reservoir])
+    .with(pawl)
+    .with(plumbing)
+    .with(pan)
+    .with(pour)
 }
 
 fn arch() -> Tree {
@@ -1224,6 +1527,15 @@ fn frost_gradient() -> bevy_hanabi::Gradient<Vec4> {
   ])
 }
 
+fn paint_gradient() -> bevy_hanabi::Gradient<Vec4> {
+  bevy_hanabi::Gradient::from_keys([
+    (0.0, Vec4::new(1.0, 0.84, 0.10, 0.0)),
+    (0.15, Vec4::new(1.0, 0.82, 0.08, 1.0)),
+    (0.7, Vec4::new(0.92, 0.70, 0.04, 0.95)),
+    (1.0, Vec4::new(0.80, 0.58, 0.02, 0.0))
+  ])
+}
+
 struct Plume {
   name: &'static str,
   thrust: Vec3,
@@ -1298,6 +1610,19 @@ impl Plume {
     lift: -3.0,
     colors: frost_gradient,
     blend: bevy_hanabi::AlphaMode::Add
+  };
+
+  const DRIP: Self = Self {
+    name: "paint drip",
+    thrust: Vec3::new(0.0, -1.7, 0.0),
+    spread: 0.11,
+    source: 0.10,
+    girth: 0.14,
+    life: 0.6,
+    rate: 110.0,
+    lift: -6.0,
+    colors: paint_gradient,
+    blend: bevy_hanabi::AlphaMode::Blend
   };
 
   const STEAM: Self = Self {
@@ -1432,6 +1757,7 @@ pub struct MachineAssets {
   jet_flame: Handle<EffectAsset>,
   wash_spray: Handle<EffectAsset>,
   chill_frost: Handle<EffectAsset>,
+  paint_drip: Handle<EffectAsset>,
   tub_steam: Handle<EffectAsset>,
   chute_mesh: Handle<Mesh>,
   chute_material: Handle<StandardMaterial>,
@@ -1616,6 +1942,7 @@ fn load_machine_assets(
     jet_flame: effects.add(Plume::JET.asset()),
     wash_spray: effects.add(Plume::WASH.asset()),
     chill_frost: effects.add(Plume::CHILL.asset()),
+    paint_drip: effects.add(Plume::DRIP.asset()),
     tub_steam: effects.add(Plume::STEAM.asset()),
     chute_mesh: meshes.add(Cuboid::new(CHUTE_REACH - 0.18, 0.44, 0.44)),
     chute_material: materials.add(StandardMaterial {
@@ -2053,6 +2380,12 @@ pub fn place(
           NotShadowCaster,
           NoFrustumCulling,
           Transform::from_xyz(0.0, CHILL_MOUTH, 0.0).with_scale(Vec3::splat(0.12)),
+          ChildOf(root)
+        ));
+      } else if kind == MachineKind::PaintBucket {
+        commands.spawn((
+          ParticleEffect::new(assets.paint_drip.clone()),
+          Transform::from_translation(PAIL_SPOUT - Vec3::Y * 0.12),
           ChildOf(root)
         ));
       } else if kind == MachineKind::Embiggener {

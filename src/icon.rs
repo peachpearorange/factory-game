@@ -152,6 +152,15 @@ pub fn radiation(color: Color) -> impl Bundle {
   ])
 }
 
+pub fn splat(color: Color) -> impl Bundle {
+  glyph(children![
+    fill(4.0, 5.0, 12.0, 12.0, 6.0, color),
+    fill(1.0, 2.0, 4.4, 4.4, 2.2, color),
+    fill(14.6, 1.6, 3.2, 3.2, 1.6, color),
+    fill(15.4, 13.0, 3.8, 3.8, 1.9, color),
+  ])
+}
+
 pub fn parachute(color: Color) -> impl Bundle {
   glyph(children![
     ring(1.0, 2.0, 18.0, 2.0, 9.0, color),

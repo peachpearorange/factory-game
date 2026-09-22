@@ -165,6 +165,7 @@ fn spawn_hud(mut commands: Commands) {
         (icon::droplet(style::WATER), EffectIcon(Effects::WET)),
         (icon::radiation(style::DECAY), EffectIcon(Effects::RADIOACTIVE)),
         (icon::frost(style::FROST), EffectIcon(Effects::FROSTY)),
+        (icon::splat(style::PAINT), EffectIcon(Effects::YELLOW)),
         (label("", style::BODY), TooltipTitle),
       ],
     ),

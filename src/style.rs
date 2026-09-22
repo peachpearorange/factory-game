@@ -20,6 +20,7 @@ pub const FIRE: Color = Color::srgb(1.0, 0.45, 0.15);
 pub const WATER: Color = Color::srgb(0.35, 0.65, 1.0);
 pub const DECAY: Color = Color::srgb(0.45, 0.95, 0.35);
 pub const FROST: Color = Color::srgb(0.62, 0.88, 1.0);
+pub const PAINT: Color = Color::srgb(0.99, 0.84, 0.18);
 
 pub const ITEMS: Color = Color::srgb(0.36, 0.86, 0.99);
 pub const STORE: Color = Color::srgb(0.46, 0.93, 0.46);

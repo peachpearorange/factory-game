@@ -187,6 +187,24 @@ impl Finish {
     Part::new(Form::Faces(Arc::new(faces.clone())), spread(&faces), self)
   }
 
+  pub fn tapered(self, foot: f32, bore: f32, tall: f32, sides: u32) -> Part {
+    let corner = |across: f32, rise: f32, side: u32| {
+      let turn = side as f32 * TAU / sides as f32;
+      Vec3::new(across / 2.0 * turn.cos(), rise, across / 2.0 * turn.sin())
+    };
+    let walls = (0..sides).map(|side| {
+      vec![
+        corner(foot, -tall / 2.0, side),
+        corner(bore, tall / 2.0, side),
+        corner(bore, tall / 2.0, side + 1),
+        corner(foot, -tall / 2.0, side + 1),
+      ]
+    });
+    let base: Vec<Vec3> =
+      (0..sides).rev().map(|side| corner(foot, -tall / 2.0, side)).collect();
+    self.faces(walls.chain([base]))
+  }
+
   pub fn shell(self, corners: impl IntoIterator<Item = Vec3>) -> Part {
     let corners: Vec<Vec3> = corners.into_iter().collect();
     self.faces(corners.chunks_exact(3).map(<[Vec3]>::to_vec))

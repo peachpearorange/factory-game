@@ -16,13 +16,15 @@ impl Effects {
   pub const WET: Self = Self(1 << 1);
   pub const RADIOACTIVE: Self = Self(1 << 2);
   pub const FROSTY: Self = Self(1 << 3);
+  pub const YELLOW: Self = Self(1 << 4);
 
-  const COUNT: usize = 1 << 4;
-  const NAMED: [(Self, &'static str); 4] = [
+  const COUNT: usize = 1 << 5;
+  const NAMED: [(Self, &'static str); 5] = [
     (Self::FIERY, "Fiery"),
     (Self::WET, "Wet"),
     (Self::RADIOACTIVE, "Radioactive"),
-    (Self::FROSTY, "Frosty")
+    (Self::FROSTY, "Frosty"),
+    (Self::YELLOW, "Yellow")
   ];
 
   pub fn label(self) -> String {
@@ -47,6 +49,7 @@ impl Effects {
     let color =
       blend(color, Vec3::new(0.35, 0.95, 0.25), self.contains(Self::RADIOACTIVE));
     let color = blend(color, Vec3::new(0.66, 0.88, 0.99), self.contains(Self::FROSTY));
+    let color = blend(color, Vec3::new(0.98, 0.82, 0.06), self.contains(Self::YELLOW));
     Color::srgb(color.x, color.y, color.z)
   }
 
