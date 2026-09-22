@@ -11,10 +11,10 @@ use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
             prelude::*,
             render::render_resource::TextureFormat},
      bevy_hanabi::{AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset,
-                   ExprWriter, HanabiPlugin, LinearDragModifier, ParticleEffect,
-                   SetAttributeModifier, SetPositionSphereModifier, ShapeDimension,
-                   SimulationSpace, SizeOverLifetimeModifier, SpawnerSettings,
-                   VectorType},
+                   ExprWriter, HanabiPlugin, LinearDragModifier, OrientMode,
+                   OrientModifier, ParticleEffect, SetAttributeModifier,
+                   SetPositionSphereModifier, ShapeDimension, SimulationSpace,
+                   SizeOverLifetimeModifier, SpawnerSettings, VectorType},
      enum_assoc::Assoc,
      fidget::context::Tree,
      std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU}};
@@ -1679,6 +1679,7 @@ impl Plume {
       .update(lift)
       .render(ColorOverLifetimeModifier::new((self.colors)()))
       .render(size)
+      .render(OrientModifier::new(OrientMode::FaceCameraPosition))
   }
 }
 
