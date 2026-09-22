@@ -2,7 +2,7 @@ use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
              material::{self, Coat, Coats, Finish},
              ore::{Effects, OreForm},
              part::{self, Assembly, Axis, IntoParts, Part, group},
-             sdf},
+             sdf, texture},
      avian3d::prelude::*,
      bevy::{camera::{RenderTarget,
                      visibility::{NoFrustumCulling, RenderLayers}},
@@ -11,8 +11,9 @@ use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
             prelude::*,
             render::render_resource::TextureFormat},
      bevy_hanabi::{AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset,
-                   ExprWriter, HanabiPlugin, LinearDragModifier, OrientMode,
-                   OrientModifier, ParticleEffect, SetAttributeModifier,
+                   EffectMaterial, ExprWriter, HanabiPlugin, LinearDragModifier,
+                   OrientMode, OrientModifier, ParticleEffect, ParticleTextureModifier,
+                   SetAttributeModifier, SetPositionCircleModifier,
                    SetPositionSphereModifier, ShapeDimension, SimulationSpace,
                    SizeOverLifetimeModifier, SpawnerSettings, VectorType},
      enum_assoc::Assoc,
@@ -1503,8 +1504,8 @@ fn fire_gradient() -> bevy_hanabi::Gradient<Vec4> {
 fn water_gradient() -> bevy_hanabi::Gradient<Vec4> {
   bevy_hanabi::Gradient::from_keys([
     (0.0, Vec4::new(0.88, 0.96, 1.0, 0.0)),
-    (0.15, Vec4::new(0.74, 0.92, 1.0, 0.85)),
-    (0.7, Vec4::new(0.42, 0.70, 0.98, 0.6)),
+    (0.15, Vec4::new(0.74, 0.92, 1.0, 0.55)),
+    (0.7, Vec4::new(0.42, 0.70, 0.98, 0.38)),
     (1.0, Vec4::new(0.26, 0.52, 0.90, 0.0))
   ])
 }
@@ -1512,8 +1513,8 @@ fn water_gradient() -> bevy_hanabi::Gradient<Vec4> {
 fn steam_gradient() -> bevy_hanabi::Gradient<Vec4> {
   bevy_hanabi::Gradient::from_keys([
     (0.0, Vec4::new(0.94, 0.97, 0.99, 0.0)),
-    (0.2, Vec4::new(0.90, 0.95, 0.98, 0.30)),
-    (0.6, Vec4::new(0.84, 0.91, 0.96, 0.18)),
+    (0.2, Vec4::new(0.90, 0.95, 0.98, 0.24)),
+    (0.6, Vec4::new(0.84, 0.91, 0.96, 0.14)),
     (1.0, Vec4::new(0.78, 0.87, 0.93, 0.0))
   ])
 }
@@ -1536,11 +1537,20 @@ fn paint_gradient() -> bevy_hanabi::Gradient<Vec4> {
   ])
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Mouth {
+  Ball,
+  Disc,
+  Ring
+}
+
 struct Plume {
   name: &'static str,
   thrust: Vec3,
   spread: f32,
+  mouth: Mouth,
   source: f32,
+  flare: f32,
   girth: f32,
   life: f32,
   rate: f32,
@@ -1554,7 +1564,9 @@ impl Plume {
     name: "torch flame",
     thrust: Vec3::new(0.0, 1.5, 0.0),
     spread: 0.22,
+    mouth: Mouth::Ball,
     source: 0.085,
+    flare: 0.0,
     girth: 0.17,
     life: 0.85,
     rate: 160.0,
@@ -1566,7 +1578,9 @@ impl Plume {
     name: "bonfire",
     thrust: Vec3::new(0.0, 2.4, 0.0),
     spread: 0.55,
+    mouth: Mouth::Ball,
     source: 0.22,
+    flare: 0.0,
     girth: 0.44,
     life: 1.15,
     rate: 420.0,
@@ -1578,7 +1592,9 @@ impl Plume {
     name: "flame jet",
     thrust: Vec3::new(0.0, 0.45, 6.2),
     spread: 0.42,
+    mouth: Mouth::Ball,
     source: 0.13,
+    flare: 0.0,
     girth: 0.26,
     life: 0.42,
     rate: 900.0,
@@ -1588,12 +1604,14 @@ impl Plume {
   };
   const WASH: Self = Self {
     name: "orewash spray",
-    thrust: Vec3::new(0.0, -0.9, 0.0),
-    spread: 1.3,
-    source: 0.62,
-    girth: 0.11,
-    life: 0.6,
-    rate: 520.0,
+    thrust: Vec3::new(0.0, -1.2, 0.0),
+    spread: 0.30,
+    mouth: Mouth::Ring,
+    source: 0.55,
+    flare: 1.40,
+    girth: 0.10,
+    life: 0.85,
+    rate: 900.0,
     lift: -4.5,
     colors: water_gradient,
     blend: bevy_hanabi::AlphaMode::Blend
@@ -1601,13 +1619,15 @@ impl Plume {
 
   const CHILL: Self = Self {
     name: "chill beam",
-    thrust: Vec3::new(0.0, -5.2, 0.0),
-    spread: 0.30,
-    source: 0.11,
-    girth: 0.17,
-    life: 0.55,
-    rate: 820.0,
-    lift: -3.0,
+    thrust: Vec3::new(0.0, -4.0, 0.0),
+    spread: 0.26,
+    mouth: Mouth::Ring,
+    source: 0.22,
+    flare: 0.95,
+    girth: 0.20,
+    life: 0.85,
+    rate: 1400.0,
+    lift: -2.0,
     colors: frost_gradient,
     blend: bevy_hanabi::AlphaMode::Add
   };
@@ -1616,7 +1636,9 @@ impl Plume {
     name: "paint drip",
     thrust: Vec3::new(0.0, -1.7, 0.0),
     spread: 0.11,
+    mouth: Mouth::Ball,
     source: 0.10,
+    flare: 0.0,
     girth: 0.14,
     life: 0.6,
     rate: 110.0,
@@ -1627,13 +1649,15 @@ impl Plume {
 
   const STEAM: Self = Self {
     name: "hot tub steam",
-    thrust: Vec3::new(0.0, 0.62, 0.0),
-    spread: 0.34,
-    source: 0.95,
-    girth: 0.66,
-    life: 2.6,
-    rate: 60.0,
-    lift: 0.30,
+    thrust: Vec3::new(0.0, 1.05, 0.0),
+    spread: 0.26,
+    mouth: Mouth::Disc,
+    source: 0.82,
+    flare: 0.18,
+    girth: 0.50,
+    life: 2.2,
+    rate: 180.0,
+    lift: 0.55,
     colors: steam_gradient,
     blend: bevy_hanabi::AlphaMode::Blend
   };
@@ -1642,14 +1666,14 @@ impl Plume {
     let writer = ExprWriter::new();
     let drift = (writer.rand(VectorType::VEC3F) * writer.lit(2.0) - writer.lit(1.0))
       * writer.lit(self.spread);
-    let init_pos = SetPositionSphereModifier {
-      center: writer.lit(Vec3::ZERO).expr(),
-      radius: writer.lit(self.source).expr(),
-      dimension: ShapeDimension::Volume
-    };
+    let outward = (writer.attr(Attribute::POSITION)
+      * writer.lit(Vec3::new(1.0, 0.0, 1.0))
+      + writer.lit(Vec3::X * 1.0e-4))
+    .normalized()
+      * writer.lit(self.flare);
     let init_vel = SetAttributeModifier::new(
       Attribute::VELOCITY,
-      (drift + writer.lit(self.thrust)).expr()
+      (drift + outward + writer.lit(self.thrust)).expr()
     );
     let init_age = SetAttributeModifier::new(Attribute::AGE, writer.lit(0.0).expr());
     let init_lifetime = SetAttributeModifier::new(
@@ -1667,11 +1691,29 @@ impl Plume {
       screen_space_size: false
     };
 
-    EffectAsset::new(4096, SpawnerSettings::rate(self.rate.into()), writer.finish())
+    let slot = writer.lit(0u32).expr();
+    let centre = writer.lit(Vec3::ZERO).expr();
+    let radius = writer.lit(self.source).expr();
+    let axis = writer.lit(Vec3::Y).expr();
+    let circle =
+      |dimension| SetPositionCircleModifier { center: centre, axis, radius, dimension };
+    let mut module = writer.finish();
+    module.add_texture_slot("puff");
+    let effect = EffectAsset::new(4096, SpawnerSettings::rate(self.rate.into()), module)
       .with_name(self.name)
       .with_simulation_space(SimulationSpace::Local)
-      .with_alpha_mode(self.blend)
-      .init(init_pos)
+      .with_alpha_mode(self.blend);
+    let effect = match self.mouth {
+      Mouth::Ball => effect.init(SetPositionSphereModifier {
+        center: centre,
+        radius,
+        dimension: ShapeDimension::Volume
+      }),
+      Mouth::Disc => effect.init(circle(ShapeDimension::Volume)),
+      Mouth::Ring => effect.init(circle(ShapeDimension::Surface))
+    };
+
+    effect
       .init(init_vel)
       .init(init_age)
       .init(init_lifetime)
@@ -1680,7 +1722,12 @@ impl Plume {
       .render(ColorOverLifetimeModifier::new((self.colors)()))
       .render(size)
       .render(OrientModifier::new(OrientMode::FaceCameraPosition))
+      .render(ParticleTextureModifier::new(slot))
   }
+}
+
+fn plume(effect: &Handle<EffectAsset>, puff: &Handle<Image>) -> impl Bundle {
+  (ParticleEffect::new(effect.clone()), EffectMaterial { images: vec![puff.clone()] })
 }
 
 fn flood_mast() -> Tree {
@@ -1760,6 +1807,7 @@ pub struct MachineAssets {
   chill_frost: Handle<EffectAsset>,
   paint_drip: Handle<EffectAsset>,
   tub_steam: Handle<EffectAsset>,
+  puff: Handle<Image>,
   chute_mesh: Handle<Mesh>,
   chute_material: Handle<StandardMaterial>,
   lens_mesh: Handle<Mesh>,
@@ -1945,6 +1993,7 @@ fn load_machine_assets(
     chill_frost: effects.add(Plume::CHILL.asset()),
     paint_drip: effects.add(Plume::DRIP.asset()),
     tub_steam: effects.add(Plume::STEAM.asset()),
+    puff: images.add(texture::puff()),
     chute_mesh: meshes.add(Cuboid::new(CHUTE_REACH - 0.18, 0.44, 0.44)),
     chute_material: materials.add(StandardMaterial {
       base_color: Color::srgba(0.42, 0.86, 0.98, 0.30),
@@ -2178,7 +2227,7 @@ pub fn place(
         ChildOf(root)
       ));
       commands.spawn((
-        ParticleEffect::new(assets.tub_steam.clone()),
+        plume(&assets.tub_steam, &assets.puff),
         Transform::from_xyz(0.0, TUB_WATER + 0.10, 0.0),
         ChildOf(root)
       ));
@@ -2209,7 +2258,7 @@ pub fn place(
         ChildOf(root)
       ));
       commands.spawn((
-        ParticleEffect::new(assets.bonfire_flame.clone()),
+        plume(&assets.bonfire_flame, &assets.puff),
         Transform::from_xyz(0.0, BONFIRE_TOP * 0.55, 0.0),
         ChildOf(root)
       ));
@@ -2236,7 +2285,7 @@ pub fn place(
         ChildOf(root)
       ));
       commands.spawn((
-        ParticleEffect::new(assets.torch_flame.clone()),
+        plume(&assets.torch_flame, &assets.puff),
         Transform::from_xyz(0.0, TORCH_HEAD + 0.12, 0.0),
         ChildOf(root)
       ));
@@ -2336,7 +2385,7 @@ pub fn place(
           Transform::from_xyz(0.0, 1.0, -1.12)
         );
         commands.spawn((
-          ParticleEffect::new(assets.jet_flame.clone()),
+          plume(&assets.jet_flame, &assets.puff),
           Transform::from_xyz(0.0, JET_HEIGHT, -0.26),
           ChildOf(root)
         ));
@@ -2365,7 +2414,7 @@ pub fn place(
           Transform::from_xyz(0.0, CHILL_GANTRY, 0.0)
         );
         commands.spawn((
-          ParticleEffect::new(assets.chill_frost.clone()),
+          plume(&assets.chill_frost, &assets.puff),
           Transform::from_xyz(0.0, CHILL_MOUTH, 0.0),
           ChildOf(root)
         ));
@@ -2385,7 +2434,7 @@ pub fn place(
         ));
       } else if kind == MachineKind::PaintBucket {
         commands.spawn((
-          ParticleEffect::new(assets.paint_drip.clone()),
+          plume(&assets.paint_drip, &assets.puff),
           Transform::from_translation(PAIL_SPOUT - Vec3::Y * 0.12),
           ChildOf(root)
         ));
@@ -2430,8 +2479,8 @@ pub fn place(
       }
       if kind == MachineKind::Orewash {
         commands.spawn((
-          ParticleEffect::new(assets.wash_spray.clone()),
-          Transform::from_xyz(0.0, WASH_BAR - 0.34, 0.0),
+          plume(&assets.wash_spray, &assets.puff),
+          Transform::from_xyz(0.0, WASH_BAR - 0.20, 0.0),
           ChildOf(root)
         ));
         commands.spawn((

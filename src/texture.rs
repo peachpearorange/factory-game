@@ -177,3 +177,13 @@ pub fn wood() -> Image {
     [(color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8, 255]
   })
 }
+
+pub fn puff() -> Image {
+  const WISP: f32 = 0.34;
+  tiling(|u, v| {
+    let away = Vec2::new(u - 0.5, v - 0.5).length() * 2.0;
+    let ragged = away * (1.0 - WISP + WISP * 2.0 * noise(u, v, 7, 7));
+    let body = ((1.0 - ragged) / 0.55).clamp(0.0, 1.0);
+    [255, 255, 255, (body * body * (3.0 - 2.0 * body) * 255.0) as u8]
+  })
+}
