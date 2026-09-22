@@ -1,12 +1,13 @@
-mod block;
 mod boat;
 mod catalog;
 mod construction;
 mod icon;
 mod machine;
+mod material;
 mod menu;
 mod opts;
 mod ore;
+mod part;
 mod player;
 mod sdf;
 mod showcase;

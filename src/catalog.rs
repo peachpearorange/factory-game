@@ -1,12 +1,13 @@
-use {crate::{block::{self, Block, Form},
-             machine::{BeltArrow, ConveyorBelt, Dropper, Furnace, Upgrader},
+use {crate::{machine::{ConveyorBelt, Dropper, Furnace, Upgrader},
+             material::{self, Coat, Coats, Finish},
              ore::{Effects, OreForm},
-             sdf, texture},
+             part::{self, Assembly, Axis, Part, group},
+             sdf},
      avian3d::prelude::*,
      bevy::{camera::{RenderTarget,
                      visibility::{NoFrustumCulling, RenderLayers}},
+            ecs::spawn::SpawnIter,
             light::NotShadowCaster,
-            math::Affine2,
             prelude::*,
             render::render_resource::TextureFormat},
      bevy_hanabi::{AccelModifier, Attribute, ColorOverLifetimeModifier, EffectAsset,
@@ -16,12 +17,20 @@ use {crate::{block::{self, Block, Form},
                    VectorType},
      enum_assoc::Assoc,
      fidget::context::Tree,
-     std::f32::consts::{FRAC_PI_2, TAU}};
+     std::f32::consts::{FRAC_PI_2, PI, TAU}};
 
 pub const CELL: f32 = 2.0;
 pub const BELT_TOP: f32 = 0.22;
 const ARROWS_PER_CELL: usize = 3;
 const ARROW_INSET: f32 = 0.8;
+const BELT_MID: f32 = 0.12;
+const BELT_CURVE: f32 = 0.078;
+const SLAT_THICK: f32 = 0.044;
+const SLAT_HALF: f32 = 0.86;
+const SLAT_PITCH: f32 = 0.21;
+const SLAT_GAP: f32 = 0.05;
+const BELT_SPEED: f32 = 1.8;
+const RAIL_TOP: f32 = BELT_MID;
 const HEARTH_HALF: f32 = 0.94;
 const HEARTH_WALL: f32 = 0.11;
 const HEARTH_PAN: f32 = 0.14;
@@ -78,24 +87,6 @@ const GAUGE_GLOW: Color = Color::srgb(1.0, 0.84, 0.36);
 const fn belt_half(cells: i32) -> f32 { cells as f32 * CELL / 2.0 - 0.01 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Assoc)]
-#[func(const fn roughness(self) -> f32)]
-#[func(const fn metallic(self) -> f32)]
-#[func(const fn reflectance(self) -> f32)]
-#[func(const fn tiling(self) -> Option<Vec2>)]
-enum Surface {
-  #[assoc(roughness = 0.6, metallic = 0.35, reflectance = 0.5)]
-  Painted,
-  #[assoc(roughness = 0.42, metallic = 0.0, reflectance = 0.38)]
-  Plastic,
-  #[assoc(roughness = 0.88, metallic = 0.0, reflectance = 0.14, tiling = texture::GRAIN)]
-  Wood,
-  #[assoc(roughness = 0.80, metallic = 0.0, reflectance = 0.20, tiling = texture::PLANK)]
-  Planked,
-  #[assoc(roughness = 0.24, metallic = 0.95, reflectance = 0.72)]
-  Metal
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Assoc)]
 #[func(pub const fn swatch(self) -> Color)]
 pub enum Tier {
   #[assoc(swatch = Color::srgb(0.91, 0.91, 0.92))]
@@ -128,21 +119,25 @@ fn drops(every: f32, value: f32, form: OreForm, spout: Vec3) -> Dropper {
 #[func(pub const fn carries_belt(self) -> bool { false })]
 #[func(pub const fn upgrade(self) -> Option<Upgrader>)]
 #[func(const fn preview_spin(self) -> f32 { -0.6 })]
-#[func(const fn surface(self) -> Surface { Surface::Painted })]
+#[func(const fn finish(self) -> Finish { material::PLAIN })]
 #[func(const fn paint(self) -> Option<fn(Vec3, Vec3) -> LinearRgba>)]
 #[func(fn shape(self) -> Tree { arch() })]
-#[func(fn blocks(self) -> Option<Vec<Block>>)]
+#[func(fn parts(self) -> Option<Vec<Part>>)]
 #[func(fn dropper(self) -> Option<Dropper>)]
-#[func(fn model(self) -> Mesh {
-  self.blocks().map(block::assembled).unwrap_or_else(|| {
-    self
-      .paint()
-      .map(|paint| sdf::bake_painted(self.shape(), machine_bounds(self), paint))
-      .unwrap_or_else(|| sdf::bake(self.shape(), machine_bounds(self)))
+#[func(fn model(self) -> Vec<(Coat, Mesh)> {
+  self.parts().map(part::assembled).unwrap_or_else(|| {
+    let finish = self.finish();
+    vec![(
+      finish.coat(),
+      self
+        .paint()
+        .map(|paint| sdf::bake_painted(self.shape(), machine_bounds(self), paint))
+        .unwrap_or_else(|| {
+          part::painted(sdf::bake(self.shape(), machine_bounds(self)), finish.color)
+        })
+    )]
   })
 })]
-#[func(const fn accent(self) -> Color { Color::WHITE })]
-#[func(const fn glow(self) -> LinearRgba { LinearRgba::BLACK })]
 pub enum MachineKind {
   #[assoc(
     name = "Conveyor",
@@ -150,7 +145,7 @@ pub enum MachineKind {
     price = 25.0,
     tier = Tier::Plain,
     carries_belt = true,
-    accent = Color::srgb(0.30, 0.31, 0.34),
+    finish = material::RUBBER.tinted(LinearRgba::rgb(0.0732, 0.0783, 0.0946)),
     shape = belt_deck(belt_half(1))
   )]
   Conveyor,
@@ -169,9 +164,8 @@ pub enum MachineKind {
     blurb = "A hen broods in the nest box and rolls a fresh egg down the ramp.",
     price = 110.0,
     tier = Tier::Plain,
-    surface = Surface::Planked,
-    model = coop_mesh(),
-    blocks = coop_blocks().map(Block::solid).collect(),
+    model = coop_model(),
+    parts = coop_parts().solid().into_iter().collect(),
     dropper = drops(4.2, 6.0, OreForm::Egg, CHUTE_SPOUT)
   )]
   Coop,
@@ -182,7 +176,7 @@ pub enum MachineKind {
     price = 2400.0,
     tier = Tier::Exotic,
     footprint = IVec2::splat(MINE_CELLS),
-    blocks = gold_mine_blocks().collect(),
+    parts = gold_mine().into_iter().collect(),
     dropper = drops(5.0, 95.0, OreForm::Nugget, MINE_SPOUT)
   )]
   GoldMine,
@@ -192,7 +186,7 @@ pub enum MachineKind {
     price = 250.0,
     tier = Tier::Sturdy,
     preview_spin = 2.3,
-    blocks = hearth_blocks().collect()
+    parts = hearth().into_iter().collect()
   )]
   Furnace,
   #[assoc(
@@ -202,8 +196,7 @@ pub enum MachineKind {
     tier = Tier::Refined,
     carries_belt = true,
     upgrade = stamps(2.5, Effects::FIERY),
-    accent = Color::srgb(0.44, 0.24, 0.18),
-    glow = LinearRgba::rgb(0.85, 0.22, 0.03)
+    finish = material::PLAIN.tinted(LinearRgba::rgb(0.1626, 0.0470, 0.0272)).lit(LinearRgba::rgb(0.85, 0.22, 0.03))
   )]
   Forge,
   #[assoc(
@@ -213,8 +206,7 @@ pub enum MachineKind {
     tier = Tier::Refined,
     carries_belt = true,
     upgrade = stamps(3.2, Effects::FIERY),
-    surface = Surface::Metal,
-    accent = Color::srgb(0.46, 0.47, 0.50),
+    finish = material::PLATE.tinted(LinearRgba::rgb(0.1789, 0.1873, 0.2140)),
     shape = jet_nozzle()
   )]
   FlameJet,
@@ -226,8 +218,7 @@ pub enum MachineKind {
     unlock = "Burn an ore worth over $500",
     carries_belt = true,
     upgrade = stamps(4.0, Effects::WET),
-    accent = Color::srgb(0.22, 0.34, 0.48),
-    glow = LinearRgba::rgb(0.06, 0.40, 0.85)
+    finish = material::PLAIN.tinted(LinearRgba::rgb(0.0397, 0.0946, 0.1960)).lit(LinearRgba::rgb(0.06, 0.40, 0.85))
   )]
   MistCoil,
   #[assoc(
@@ -237,7 +228,7 @@ pub enum MachineKind {
     tier = Tier::Refined,
     carries_belt = true,
     upgrade = stamps(3.0, Effects::WET),
-    surface = Surface::Plastic,
+    finish = material::SHELL,
     paint = orewash_paint,
     shape = orewash_tunnel()
   )]
@@ -250,7 +241,7 @@ pub enum MachineKind {
     footprint = IVec2::new(CHILL_CELLS, 1),
     carries_belt = true,
     upgrade = stamps(5.0, Effects::FROSTY),
-    surface = Surface::Plastic,
+    finish = material::SHELL,
     paint = chill_paint,
     shape = chill_gantry()
   )]
@@ -263,8 +254,7 @@ pub enum MachineKind {
     unlock = "Burn 250 ore",
     carries_belt = true,
     upgrade = stamps(9.0, Effects::RADIOACTIVE),
-    accent = Color::srgb(0.24, 0.40, 0.22),
-    glow = LinearRgba::rgb(0.10, 0.85, 0.12)
+    finish = material::PLAIN.tinted(LinearRgba::rgb(0.0470, 0.1329, 0.0397)).lit(LinearRgba::rgb(0.10, 0.85, 0.12))
   )]
   DecayChamber,
   #[assoc(
@@ -276,7 +266,7 @@ pub enum MachineKind {
     tier = Tier::Exotic,
     carries_belt = true,
     upgrade = Upgrader { multiplier: 2.0, effects: Effects::NONE, growth: 1.35 },
-    surface = Surface::Metal,
+    finish = material::PLATE,
     paint = embiggener_paint,
     shape = embiggener_frame()
   )]
@@ -286,7 +276,7 @@ pub enum MachineKind {
     blurb = "A burning brand on a stake. Keeps the dark off a corner of the floor.",
     price = 40.0,
     tier = Tier::Plain,
-    surface = Surface::Wood,
+    finish = material::SANDED,
     shape = torch_post()
   )]
   Torch,
@@ -295,7 +285,7 @@ pub enum MachineKind {
     blurb = "A stacked heap of branches, well alight. Warms a wide stretch of floor.",
     price = 120.0,
     tier = Tier::Plain,
-    surface = Surface::Wood,
+    finish = material::SANDED,
     shape = bonfire_pile()
   )]
   Bonfire,
@@ -304,8 +294,7 @@ pub enum MachineKind {
     blurb = "Angles a tight beam across the floor. Rotate it to aim where you want.",
     price = 180.0,
     tier = Tier::Sturdy,
-    surface = Surface::Metal,
-    accent = Color::srgb(0.62, 0.64, 0.68),
+    finish = material::PLATE.tinted(LinearRgba::rgb(0.3424, 0.3672, 0.4200)),
     shape = lamp_post(LAMP_HEIGHT, LAMP_SHADE, LAMP_TILT)
   )]
   Lamp,
@@ -314,7 +303,7 @@ pub enum MachineKind {
     blurb = "A taller mast with a wide, hard beam. Lights a whole bank of machines.",
     price = 520.0,
     tier = Tier::Refined,
-    surface = Surface::Metal,
+    finish = material::PLATE,
     paint = floodlight_paint,
     shape = flood_mast()
   )]
@@ -354,13 +343,27 @@ impl MachineKind {
 }
 
 fn belt_deck(half: f32) -> Tree {
+  let drum = |side: f32| {
+    sdf::at(
+      sdf::along_z(sdf::cylinder(BELT_CURVE - 0.008, SLAT_HALF - 0.04)),
+      Vec3::new(side * (half - BELT_CURVE), BELT_MID, 0.0)
+    )
+  };
+  let rail = |side: f32| {
+    sdf::at(
+      sdf::cuboid(Vec3::new(half, RAIL_TOP / 2.0, 0.06)),
+      Vec3::new(0.0, RAIL_TOP / 2.0, side * 0.95)
+    )
+  };
   sdf::union([
     sdf::at(
-      sdf::rounded_box(Vec3::new(half, BELT_TOP / 2.0, 0.92), 0.05),
-      Vec3::new(0.0, BELT_TOP / 2.0, 0.0)
+      sdf::cuboid(Vec3::new(half - BELT_CURVE, BELT_CURVE - 0.008, SLAT_HALF - 0.04)),
+      Vec3::new(0.0, BELT_MID, 0.0)
     ),
-    sdf::at(sdf::cuboid(Vec3::new(half, 0.10, 0.06)), Vec3::new(0.0, 0.16, 0.95)),
-    sdf::at(sdf::cuboid(Vec3::new(half, 0.10, 0.06)), Vec3::new(0.0, 0.16, -0.95))
+    drum(1.0),
+    drum(-1.0),
+    rail(1.0),
+    rail(-1.0)
   ])
 }
 
@@ -501,97 +504,76 @@ fn machine_bounds(kind: MachineKind) -> sdf::Bounds {
   sdf::Bounds::around(Vec3::new(0.0, 1.45, 0.0), reach, 7)
 }
 
-const TIMBER: LinearRgba = LinearRgba::rgb(0.58, 0.40, 0.24);
-const BARN: LinearRgba = LinearRgba::rgb(0.92, 0.24, 0.17);
-const SHINGLE: LinearRgba = LinearRgba::rgb(0.96, 0.96, 0.94);
-const STRAW: LinearRgba = LinearRgba::rgb(0.92, 0.76, 0.36);
 const COOP_FRONT: f32 = 0.08;
 const COOP_WALL: f32 = 0.06;
 const COOP_MID: f32 = CHUTE_FLOOR + 0.44;
 const RAMP_TOP: f32 = CHUTE_FLOOR + 0.05;
 
-fn coop_blocks() -> impl Iterator<Item = Block> {
-  let leg = |side: f32, along: f32| {
-    Block::new(
-      Vec3::new(0.07, CHUTE_FLOOR / 2.0, 0.07),
-      Vec3::new(DROPPER_BACK + along * 0.46, CHUTE_FLOOR / 2.0, side * 0.50),
-      TIMBER
-    )
-  };
-  let wall = |side: f32| {
-    Block::new(
-      Vec3::new(0.56, 0.42, COOP_WALL),
-      Vec3::new(DROPPER_BACK, COOP_MID, side * 0.54),
-      BARN
-    )
-  };
-  let jamb = |side: f32| {
-    Block::new(
-      Vec3::new(COOP_WALL, 0.42, 0.20),
-      Vec3::new(COOP_FRONT, COOP_MID, side * 0.40),
-      BARN
-    )
-  };
-  let roof = |slope: f32| {
-    Block::new(
-      Vec3::new(0.55, 0.05, 0.78),
-      Vec3::new(DROPPER_BACK + slope * 0.46, COOP_EAVES + 0.11, 0.0),
-      SHINGLE
-    )
-    .tilted(-slope * 0.6)
-  };
-  let rail = |side: f32| {
-    Block::new(
-      Vec3::new(CHUTE_REACH / 2.0 - 0.10, 0.06, 0.04),
-      Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, side * 0.30),
-      STRAW
-    )
-  };
-  [
-    Block::new(
-      Vec3::new(0.62, 0.06, 0.66),
-      Vec3::new(DROPPER_BACK, CHUTE_FLOOR - 0.04, 0.0),
-      TIMBER
-    ),
-    Block::new(
-      Vec3::new(COOP_WALL, 0.42, 0.60),
-      Vec3::new(DROPPER_BACK - 0.50, COOP_MID, 0.0),
-      BARN
-    ),
-    Block::new(
-      Vec3::new(COOP_WALL, 0.13, 0.20),
-      Vec3::new(COOP_FRONT, COOP_EAVES - 0.13, 0.0),
-      BARN
-    ),
-    Block::new(
-      Vec3::new(0.07, 0.05, 0.80),
-      Vec3::new(DROPPER_BACK, CHUTE_FLOOR + 1.26, 0.0),
-      SHINGLE
-    ),
-    Block::new(
-      Vec3::new(CHUTE_REACH / 2.0, 0.05, 0.32),
-      Vec3::new(CHUTE_REACH / 2.0 - 0.10, CHUTE_FLOOR, 0.0),
-      STRAW
-    ),
-    Block::new(
-      Vec3::new(0.06, 0.12, 0.34),
-      Vec3::new(CHUTE_REACH - 0.14, CHUTE_FLOOR + 0.10, 0.0),
-      STRAW
-    ),
-    roof(1.0),
-    roof(-1.0),
-    wall(1.0),
-    wall(-1.0),
-    jamb(1.0),
-    jamb(-1.0),
-    rail(1.0),
-    rail(-1.0),
-    leg(1.0, 1.0),
-    leg(1.0, -1.0),
-    leg(-1.0, 1.0),
-    leg(-1.0, -1.0)
-  ]
+fn coop_parts() -> Assembly {
+  let (timber, barn, shingle, straw) =
+    (material::TIMBER, material::BARN, material::SHINGLE, material::STRAW);
+  let legs = group([timber.beam(CHUTE_FLOOR, 0.14).on(Vec3::new(0.46, 0.0, 0.50))])
+    .mirrored(Axis::X)
+    .mirrored(Axis::Z)
+    .at(Vec3::X * DROPPER_BACK);
+  let walls = group([
+    barn.slab(Vec3::new(1.12, 0.84, COOP_WALL * 2.0)).at(Vec3::new(
+      DROPPER_BACK,
+      COOP_MID,
+      0.54
+    )),
+    barn
+      .slab(Vec3::new(COOP_WALL * 2.0, 0.84, 0.40))
+      .at(Vec3::new(COOP_FRONT, COOP_MID, 0.40))
+  ])
+  .mirrored(Axis::Z);
+  let roofs = group([shingle
+    .slab(Vec3::new(1.10, 0.10, 1.56))
+    .at(Vec3::new(0.46, COOP_EAVES + 0.11, 0.0))
+    .tilted(-0.6)])
+  .mirrored(Axis::X)
+  .at(Vec3::X * DROPPER_BACK);
+  let rails = group([straw
+    .slab(Vec3::new(CHUTE_REACH - 0.20, 0.12, 0.08))
+    .at(Vec3::new(CHUTE_REACH / 2.0, CHUTE_FLOOR + 0.06, 0.30))])
+  .mirrored(Axis::Z);
+
+  group([
+    timber.slab(Vec3::new(1.24, 0.12, 1.32)).under(Vec3::new(
+      DROPPER_BACK,
+      CHUTE_FLOOR + 0.02,
+      0.0
+    )),
+    barn.slab(Vec3::new(COOP_WALL * 2.0, 0.84, 1.20)).at(Vec3::new(
+      DROPPER_BACK - 0.50,
+      COOP_MID,
+      0.0
+    )),
+    barn
+      .slab(Vec3::new(COOP_WALL * 2.0, 0.26, 0.40))
+      .under(Vec3::new(COOP_FRONT, COOP_EAVES, 0.0)),
+    shingle.slab(Vec3::new(0.14, 0.10, 1.60)).at(Vec3::new(
+      DROPPER_BACK,
+      CHUTE_FLOOR + 1.26,
+      0.0
+    )),
+    straw.slab(Vec3::new(CHUTE_REACH, 0.10, 0.64)).at(Vec3::new(
+      CHUTE_REACH / 2.0 - 0.10,
+      CHUTE_FLOOR,
+      0.0
+    )),
+    straw.slab(Vec3::new(0.12, 0.24, 0.68)).at(Vec3::new(
+      CHUTE_REACH - 0.14,
+      CHUTE_FLOOR + 0.10,
+      0.0
+    ))
+  ])
   .into_iter()
+  .chain(legs)
+  .chain(walls)
+  .chain(roofs)
+  .chain(rails)
+  .collect()
 }
 
 fn hen() -> Tree {
@@ -638,151 +620,96 @@ fn hen_paint(at: Vec3, _: Vec3) -> LinearRgba {
   }
 }
 
-fn coop_mesh() -> Mesh {
-  block::merged(
-    block::smooth(sdf::bake_painted(
+fn coop_model() -> Vec<(Coat, Mesh)> {
+  part::coated(
+    part::assembled(coop_parts()),
+    material::PLAIN.coat(),
+    sdf::bake_painted(
       hen(),
       sdf::Bounds::around(Vec3::new(0.70, CHUTE_FLOOR + 0.42, 0.0), 0.62, 7),
       hen_paint
-    )),
-    block::assembled(coop_blocks())
+    )
   )
 }
 
-const STONE: LinearRgba = LinearRgba::rgb(0.35, 0.33, 0.31);
-const SEAM: LinearRgba = LinearRgba::rgb(0.96, 0.74, 0.16);
-const DARK: LinearRgba = LinearRgba::rgb(0.06, 0.05, 0.05);
-const STEEL: LinearRgba = LinearRgba::rgb(0.44, 0.46, 0.50);
 const MINE_FLANK: f32 = (1.95 - MINE_BORE) / 2.0;
 const MINE_ROOF: f32 = MINE_DECK + MINE_MOUTH;
 
-fn gold_mine_blocks() -> impl Iterator<Item = Block> {
-  let deck_half = (MINE_LIP - MINE_TAIL) / 2.0;
+fn gold_mine() -> Assembly {
+  let (stone, gold, timber) = (material::STONE, material::GOLD, material::TIMBER);
+  let deck_long = MINE_LIP - MINE_TAIL;
   let deck_at = (MINE_LIP + MINE_TAIL) / 2.0;
-  let bore_half = (MINE_FACE - MINE_BACK) / 2.0 - 0.425;
-  let bore_at = MINE_FACE - bore_half;
-
-  let flank = |side: f32| {
-    Block::new(
-      Vec3::new((MINE_FACE - MINE_BACK) / 2.0, MINE_CREST / 2.0, MINE_FLANK),
-      Vec3::new(
-        (MINE_FACE + MINE_BACK) / 2.0,
-        MINE_CREST / 2.0,
-        side * (MINE_BORE + MINE_FLANK)
-      ),
-      STONE
-    )
-    .solid()
-  };
-  let boulder = |side: f32, girth: f32| {
-    Block::new(Vec3::splat(girth), Vec3::new(0.56, girth * 0.78, side * 1.42), STONE)
-      .shaped(Form::Ball)
-      .solid()
-  };
-  let seam = |half: Vec3, at: Vec3| Block::new(half, at, SEAM);
+  let bore_long = MINE_FACE - MINE_BACK - 0.85;
+  let bore_at = MINE_FACE - bore_long / 2.0;
   let face_seam = |rise: f32, across: f32, reach: f32| {
-    seam(Vec3::new(0.02, 0.07, reach), Vec3::new(MINE_FACE + 0.02, rise, across))
+    gold.slab(Vec3::new(0.04, 0.14, reach * 2.0)).at(Vec3::new(
+      MINE_FACE + 0.02,
+      rise,
+      across
+    ))
   };
   let side_seam = |side: f32, rise: f32, along: f32, reach: f32| {
-    seam(Vec3::new(reach, 0.06, 0.02), Vec3::new(along, rise, side * 1.97))
+    gold.slab(Vec3::new(reach * 2.0, 0.12, 0.04)).at(Vec3::new(along, rise, side * 1.97))
   };
 
-  let leg = |along: f32, side: f32| {
-    Block::new(
-      Vec3::new(0.08, MINE_DECK / 2.0, 0.08),
-      Vec3::new(along, MINE_DECK / 2.0, side * 0.56),
-      TIMBER
-    )
-    .solid()
-  };
-  let kerb = |side: f32| {
-    Block::new(
-      Vec3::new(deck_half, 0.07, 0.06),
-      Vec3::new(deck_at, MINE_DECK + 0.07, side * 0.56),
-      TIMBER
-    )
-  };
-  let rail = |side: f32| {
-    Block::new(
-      Vec3::new(deck_half, 0.04, 0.05),
-      Vec3::new(deck_at, MINE_DECK + 0.04, side * 0.24),
-      STEEL
-    )
-  };
-  let sleeper = |step: usize| {
-    Block::new(
-      Vec3::new(0.07, 0.03, 0.38),
-      Vec3::new(MINE_TAIL + 0.35 + step as f32 * 0.52, MINE_DECK + 0.03, 0.0),
-      TIMBER
-    )
-  };
-  let mast = |along: f32, side: f32| {
-    Block::new(
-      Vec3::new(0.07, (MINE_HEAD - MINE_DECK) / 2.0, 0.07),
-      Vec3::new(along, (MINE_HEAD + MINE_DECK) / 2.0, side * 0.62),
-      TIMBER
-    )
-    .solid()
-  };
-  let brace = |side: f32| {
-    Block::new(
-      Vec3::new(0.70, 0.07, 0.07),
-      Vec3::new(1.35, MINE_HEAD, side * 0.62),
-      TIMBER
-    )
-  };
-  let yoke = |along: f32| {
-    Block::new(Vec3::new(0.07, 0.07, 0.62), Vec3::new(along, MINE_HEAD, 0.0), TIMBER)
-  };
-  let jamb = |side: f32| {
-    Block::new(
-      Vec3::new(0.10, MINE_MOUTH / 2.0, 0.09),
-      Vec3::new(MINE_FACE, MINE_DECK + MINE_MOUTH / 2.0, side * (MINE_BORE + 0.09)),
-      TIMBER
-    )
-    .solid()
-  };
+  let hill = group([stone
+    .slab(Vec3::new(MINE_FACE - MINE_BACK, MINE_CREST, MINE_FLANK * 2.0))
+    .on(Vec3::new((MINE_FACE + MINE_BACK) / 2.0, 0.0, MINE_BORE + MINE_FLANK))
+    .solid()])
+  .mirrored(Axis::Z);
+  let trestle = group([
+    timber.beam(MINE_DECK, 0.16).on(Vec3::new(0.75, 0.0, 0.56)).solid(),
+    timber.beam(MINE_HEAD - MINE_DECK, 0.14).on(Vec3::new(0.65, MINE_DECK, 0.62)).solid()
+  ])
+  .repeated(2, Vec3::X * 1.40)
+  .mirrored(Axis::Z);
+  let flanks = group([
+    timber.slab(Vec3::new(deck_long, 0.14, 0.12)).on(Vec3::new(deck_at, MINE_DECK, 0.56)),
+    material::STEEL
+      .slab(Vec3::new(deck_long, 0.08, 0.10))
+      .on(Vec3::new(deck_at, MINE_DECK, 0.24)),
+    timber.slab(Vec3::new(1.40, 0.14, 0.14)).at(Vec3::new(1.35, MINE_HEAD, 0.62)),
+    timber
+      .slab(Vec3::new(0.20, MINE_MOUTH, 0.18))
+      .on(Vec3::new(MINE_FACE, MINE_DECK, MINE_BORE + 0.09))
+      .solid()
+  ])
+  .mirrored(Axis::Z);
+  let sleepers = group([timber.slab(Vec3::new(0.14, 0.06, 0.76)).on(Vec3::new(
+    MINE_TAIL + 0.35,
+    MINE_DECK,
+    0.0
+  ))])
+  .repeated(5, Vec3::X * 0.52);
+  let yokes =
+    group([timber.slab(Vec3::new(0.14, 0.14, 1.24)).at(Vec3::new(0.65, MINE_HEAD, 0.0))])
+      .repeated(2, Vec3::X * 1.40);
 
-  [
-    flank(1.0),
-    flank(-1.0),
-    Block::new(
-      Vec3::new(0.425, MINE_CREST / 2.0, 1.95),
-      Vec3::new(MINE_BACK + 0.425, MINE_CREST / 2.0, 0.0),
-      STONE
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(bore_half, (MINE_CREST - MINE_ROOF) / 2.0, MINE_BORE),
-      Vec3::new(bore_at, (MINE_CREST + MINE_ROOF) / 2.0, 0.0),
-      STONE
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(bore_half, MINE_DECK / 2.0, MINE_BORE),
-      Vec3::new(bore_at, MINE_DECK / 2.0, 0.0),
-      STONE
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(0.03, MINE_MOUTH / 2.0, MINE_BORE),
-      Vec3::new(bore_at - bore_half + 0.03, MINE_DECK + MINE_MOUTH / 2.0, 0.0),
-      DARK
-    ),
-    Block::new(
-      Vec3::new(0.85, 0.35, 1.45),
-      Vec3::new(-1.15, MINE_CREST + 0.35, 0.0),
-      STONE
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(0.45, 0.28, 0.80),
-      Vec3::new(-1.40, MINE_CREST + 0.98, 0.0),
-      STONE
-    )
-    .solid(),
-    boulder(1.0, 0.52),
-    boulder(-1.0, 0.44),
+  group([
+    stone
+      .slab(Vec3::new(0.85, MINE_CREST, 3.90))
+      .on(Vec3::new(MINE_BACK + 0.425, 0.0, 0.0))
+      .solid(),
+    stone
+      .slab(Vec3::new(bore_long, MINE_CREST - MINE_ROOF, MINE_BORE * 2.0))
+      .under(Vec3::new(bore_at, MINE_CREST, 0.0))
+      .solid(),
+    stone
+      .slab(Vec3::new(bore_long, MINE_DECK, MINE_BORE * 2.0))
+      .on(Vec3::new(bore_at, 0.0, 0.0))
+      .solid(),
+    material::SHADOW.slab(Vec3::new(0.06, MINE_MOUTH, MINE_BORE * 2.0)).on(Vec3::new(
+      MINE_FACE - bore_long + 0.03,
+      MINE_DECK,
+      0.0
+    )),
+    stone.slab(Vec3::new(1.70, 0.70, 2.90)).on(Vec3::new(-1.15, MINE_CREST, 0.0)).solid(),
+    stone
+      .slab(Vec3::new(0.90, 0.56, 1.60))
+      .on(Vec3::new(-1.40, MINE_CREST + 0.70, 0.0))
+      .solid(),
+    stone.ball(1.04).at(Vec3::new(0.56, 0.52 * 0.78, 1.42)).solid(),
+    stone.ball(0.88).at(Vec3::new(0.56, 0.44 * 0.78, -1.42)).solid(),
     face_seam(1.92, 1.24, 0.46),
     face_seam(0.74, -1.30, 0.38),
     face_seam(2.34, -0.95, 0.30),
@@ -790,118 +717,80 @@ fn gold_mine_blocks() -> impl Iterator<Item = Block> {
     side_seam(1.0, 0.62, -1.45, 0.34),
     side_seam(-1.0, 2.05, -1.10, 0.44),
     side_seam(-1.0, 1.02, -0.35, 0.30),
-    seam(Vec3::new(0.30, 0.02, 0.36), Vec3::new(-1.30, MINE_CREST + 0.72, 0.30)),
-    seam(Vec3::new(0.24, 0.02, 0.30), Vec3::new(-0.55, MINE_CREST + 0.02, -0.80)),
-    Block::new(
-      Vec3::new(deck_half, 0.06, 0.62),
-      Vec3::new(deck_at, MINE_DECK - 0.06, 0.0),
-      TIMBER
-    )
-    .solid(),
-    kerb(1.0),
-    kerb(-1.0),
-    rail(1.0),
-    rail(-1.0),
-    leg(0.75, 1.0),
-    leg(0.75, -1.0),
-    leg(2.15, 1.0),
-    leg(2.15, -1.0),
-    mast(0.65, 1.0),
-    mast(0.65, -1.0),
-    mast(2.05, 1.0),
-    mast(2.05, -1.0),
-    brace(1.0),
-    brace(-1.0),
-    yoke(0.65),
-    yoke(2.05),
-    Block::new(
-      Vec3::new(0.24, 0.06, 0.24),
-      Vec3::new(1.35, MINE_HEAD - 0.24, 0.0),
-      STEEL
-    )
-    .shaped(Form::Pillar)
-    .rolled(FRAC_PI_2),
-    jamb(1.0),
-    jamb(-1.0),
-    Block::new(
-      Vec3::new(0.10, 0.11, MINE_BORE + 0.20),
-      Vec3::new(MINE_FACE, MINE_ROOF + 0.11, 0.0),
-      TIMBER
-    )
-  ]
+    gold.slab(Vec3::new(0.60, 0.04, 0.72)).at(Vec3::new(-1.30, MINE_CREST + 0.72, 0.30)),
+    gold.slab(Vec3::new(0.48, 0.04, 0.60)).at(Vec3::new(-0.55, MINE_CREST + 0.02, -0.80)),
+    timber
+      .slab(Vec3::new(deck_long, 0.12, 1.24))
+      .under(Vec3::new(deck_at, MINE_DECK, 0.0))
+      .solid(),
+    material::STEEL
+      .rod(0.48, 0.12)
+      .at(Vec3::new(1.35, MINE_HEAD - 0.24, 0.0))
+      .rolled(FRAC_PI_2),
+    timber
+      .slab(Vec3::new(0.20, 0.22, (MINE_BORE + 0.20) * 2.0))
+      .on(Vec3::new(MINE_FACE, MINE_ROOF, 0.0))
+  ])
   .into_iter()
-  .chain((0..5).map(sleeper))
+  .chain(hill)
+  .chain(trestle)
+  .chain(flanks)
+  .chain(sleepers)
+  .chain(yokes)
+  .collect()
 }
 
-const IRON: LinearRgba = LinearRgba::rgb(0.30, 0.31, 0.34);
-const SOOT: LinearRgba = LinearRgba::rgb(0.11, 0.11, 0.12);
-const BRASS: LinearRgba = LinearRgba::rgb(0.74, 0.55, 0.20);
-const COALS: LinearRgba = LinearRgba::rgb(1.0, 0.42, 0.07);
+fn hearth() -> Assembly {
+  let (iron, brass) = (material::IRON, material::BRASS);
+  let walls = group([
+    iron
+      .slab(Vec3::new(HEARTH_HALF * 2.0, HEARTH_RIM - HEARTH_PAN, HEARTH_WALL * 2.0))
+      .on(Vec3::new(0.0, HEARTH_PAN, HEARTH_HALF - HEARTH_WALL)),
+    brass
+      .slab(Vec3::new(HEARTH_HALF * 2.0, 0.08, (HEARTH_WALL + 0.02) * 2.0))
+      .on(Vec3::new(0.0, HEARTH_RIM, HEARTH_HALF - HEARTH_WALL))
+  ])
+  .mirrored(Axis::Z);
 
-fn hearth_blocks() -> impl Iterator<Item = Block> {
-  let side = |across: f32| {
-    Block::new(
-      Vec3::new(HEARTH_HALF, (HEARTH_RIM - HEARTH_PAN) / 2.0, HEARTH_WALL),
-      Vec3::new(
-        0.0,
-        (HEARTH_RIM + HEARTH_PAN) / 2.0,
-        across * (HEARTH_HALF - HEARTH_WALL)
-      ),
-      IRON
-    )
-  };
-  let capping = |across: f32| {
-    Block::new(
-      Vec3::new(HEARTH_HALF, 0.04, HEARTH_WALL + 0.02),
-      Vec3::new(0.0, HEARTH_RIM + 0.04, across * (HEARTH_HALF - HEARTH_WALL)),
-      BRASS
-    )
-  };
-  [
-    Block::new(
-      Vec3::new(HEARTH_HALF, HEARTH_PAN / 2.0, HEARTH_HALF),
-      Vec3::new(0.0, HEARTH_PAN / 2.0, 0.0),
-      SOOT
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(HEARTH_HALF - HEARTH_WALL, 0.03, HEARTH_HALF - HEARTH_WALL),
-      Vec3::new(0.0, HEARTH_PAN + 0.03, 0.0),
-      COALS
-    ),
-    Block::new(
-      Vec3::new(HEARTH_WALL, (HEARTH_BACK - HEARTH_PAN) / 2.0, HEARTH_HALF),
-      Vec3::new(HEARTH_HALF - HEARTH_WALL, (HEARTH_BACK + HEARTH_PAN) / 2.0, 0.0),
-      IRON
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(HEARTH_WALL, 0.04, HEARTH_HALF),
-      Vec3::new(HEARTH_HALF - HEARTH_WALL, HEARTH_BACK + 0.04, 0.0),
-      BRASS
-    ),
-    Block::new(
-      Vec3::new(HEARTH_WALL, HEARTH_LIP / 2.0, HEARTH_HALF),
-      Vec3::new(HEARTH_WALL - HEARTH_HALF, HEARTH_LIP / 2.0, 0.0),
-      BRASS
-    )
-    .solid(),
-    Block::new(
-      Vec3::new(0.18, (FURNACE_STACK - HEARTH_BACK) / 2.0, 0.18),
-      Vec3::new(HEARTH_HALF - 0.30, (FURNACE_STACK + HEARTH_BACK) / 2.0, 0.0),
-      IRON
-    ),
-    Block::new(
-      Vec3::new(0.24, 0.06, 0.24),
-      Vec3::new(HEARTH_HALF - 0.30, FURNACE_STACK + 0.06, 0.0),
-      BRASS
-    ),
-    side(1.0),
-    side(-1.0),
-    capping(1.0),
-    capping(-1.0)
-  ]
+  group([
+    material::SOOT
+      .slab(Vec3::new(HEARTH_HALF * 2.0, HEARTH_PAN, HEARTH_HALF * 2.0))
+      .on(Vec3::ZERO)
+      .solid(),
+    material::CINDER
+      .slab(Vec3::new(
+        (HEARTH_HALF - HEARTH_WALL) * 2.0,
+        0.06,
+        (HEARTH_HALF - HEARTH_WALL) * 2.0
+      ))
+      .on(Vec3::Y * HEARTH_PAN),
+    iron
+      .slab(Vec3::new(HEARTH_WALL * 2.0, HEARTH_BACK - HEARTH_PAN, HEARTH_HALF * 2.0))
+      .on(Vec3::new(HEARTH_HALF - HEARTH_WALL, HEARTH_PAN, 0.0))
+      .solid(),
+    brass.slab(Vec3::new(HEARTH_WALL * 2.0, 0.08, HEARTH_HALF * 2.0)).on(Vec3::new(
+      HEARTH_HALF - HEARTH_WALL,
+      HEARTH_BACK,
+      0.0
+    )),
+    brass
+      .slab(Vec3::new(HEARTH_WALL * 2.0, HEARTH_LIP, HEARTH_HALF * 2.0))
+      .on(Vec3::new(HEARTH_WALL - HEARTH_HALF, 0.0, 0.0))
+      .solid(),
+    iron.slab(Vec3::new(0.36, FURNACE_STACK - HEARTH_BACK, 0.36)).on(Vec3::new(
+      HEARTH_HALF - 0.30,
+      HEARTH_BACK,
+      0.0
+    )),
+    brass.slab(Vec3::new(0.48, 0.12, 0.48)).on(Vec3::new(
+      HEARTH_HALF - 0.30,
+      FURNACE_STACK,
+      0.0
+    ))
+  ])
   .into_iter()
+  .chain(walls)
+  .collect()
 }
 
 fn bonfire_pile() -> Tree {
@@ -1354,9 +1243,11 @@ fn lamp_post(height: f32, shade: f32, tilt: f32) -> Tree {
 #[derive(Resource)]
 pub struct MachineAssets {
   meshes: [Handle<Mesh>; MachineKind::COUNT],
-  materials: [Handle<StandardMaterial>; MachineKind::COUNT],
+  parts: [Vec<(Handle<Mesh>, Handle<StandardMaterial>)>; MachineKind::COUNT],
   arrow_mesh: Handle<Mesh>,
   arrow_material: Handle<StandardMaterial>,
+  slat_mesh: Handle<Mesh>,
+  slat_materials: [Handle<StandardMaterial>; 2],
   glow_mesh: Handle<Mesh>,
   torch_glow: Handle<StandardMaterial>,
   torch_flame: Handle<EffectAsset>,
@@ -1376,6 +1267,7 @@ pub struct MachineAssets {
   lamp_glow: Handle<StandardMaterial>,
   chill_glow: Handle<StandardMaterial>,
   gauge_glow: Handle<StandardMaterial>,
+  pub hover_glow: Handle<StandardMaterial>,
   pub ghost_valid: Handle<StandardMaterial>,
   pub ghost_blocked: Handle<StandardMaterial>
 }
@@ -1383,6 +1275,15 @@ pub struct MachineAssets {
 impl MachineAssets {
   pub fn mesh(&self, kind: MachineKind) -> Handle<Mesh> {
     self.meshes[kind.index()].clone()
+  }
+
+  fn model(&self, kind: MachineKind) -> impl Bundle {
+    Children::spawn(SpawnIter(
+      self.parts[kind.index()]
+        .clone()
+        .into_iter()
+        .map(|(mesh, material)| (Mesh3d(mesh), MeshMaterial3d(material)))
+    ))
   }
 }
 
@@ -1424,24 +1325,15 @@ fn load_machine_assets(
     ..default()
   };
 
-  let machine_meshes = MachineKind::ALL.map(|kind| meshes.add(kind.model()));
-  let grain = images.add(texture::wood());
-  let boards = images.add(texture::planks());
-  let machine_materials = MachineKind::ALL.map(|kind| {
-    let surface = kind.surface();
-    let tiling = surface.tiling().unwrap_or(Vec2::ONE);
-    materials.add(StandardMaterial {
-      base_color: kind.accent(),
-      emissive: kind.glow(),
-      base_color_texture: (surface == Surface::Wood)
-        .then(|| grain.clone())
-        .or_else(|| (surface == Surface::Planked).then(|| boards.clone())),
-      uv_transform: Affine2::from_scale(Vec2::ONE / tiling),
-      perceptual_roughness: surface.roughness(),
-      reflectance: surface.reflectance(),
-      metallic: surface.metallic(),
-      ..default()
-    })
+  let mut coats = Coats::new(&mut images);
+  let machine_models = MachineKind::ALL.map(|kind| kind.model());
+  let machine_meshes =
+    machine_models.each_ref().map(|model| meshes.add(part::whole(model)));
+  let machine_parts = machine_models.map(|model| {
+    model
+      .into_iter()
+      .map(|(coat, mesh)| (meshes.add(mesh), coats.of(coat, &mut materials)))
+      .collect::<Vec<_>>()
   });
 
   let previews = MachineKind::ALL.map(|kind| {
@@ -1455,13 +1347,22 @@ fn load_machine_assets(
     let stage = Vec3::new(0.0, -600.0 - 40.0 * kind.index() as f32, 0.0);
     let focus = stage + Vec3::Y * 1.5;
 
-    commands.spawn((
-      Mesh3d(machine_meshes[kind.index()].clone()),
-      MeshMaterial3d(machine_materials[kind.index()].clone()),
-      Transform::from_translation(stage)
-        .with_rotation(Quat::from_rotation_y(kind.preview_spin())),
-      layer.clone()
-    ));
+    let posed = commands
+      .spawn((
+        Transform::from_translation(stage)
+          .with_rotation(Quat::from_rotation_y(kind.preview_spin())),
+        Visibility::default(),
+        layer.clone()
+      ))
+      .id();
+    for (mesh, material) in &machine_parts[kind.index()] {
+      commands.spawn((
+        Mesh3d(mesh.clone()),
+        MeshMaterial3d(material.clone()),
+        layer.clone(),
+        ChildOf(posed)
+      ));
+    }
     commands.spawn((
       PreviewCamera,
       Camera3d::default(),
@@ -1494,9 +1395,10 @@ fn load_machine_assets(
     RenderLayers::from_layers(&MachineKind::ALL.map(|kind| kind.index() + 1))
   ));
   commands.insert_resource(MachinePreviews(previews));
+  commands.insert_resource(coats);
   commands.insert_resource(MachineAssets {
     meshes: machine_meshes,
-    materials: machine_materials,
+    parts: machine_parts,
     arrow_mesh: meshes.add(Triangle2d::new(
       Vec2::new(0.36, 0.0),
       Vec2::new(-0.22, 0.40),
@@ -1510,6 +1412,21 @@ fn load_machine_assets(
       cull_mode: None,
       ..default()
     }),
+    slat_mesh: meshes.add(Cuboid::new(
+      SLAT_PITCH - SLAT_GAP,
+      SLAT_THICK,
+      SLAT_HALF * 2.0
+    )),
+    slat_materials: [Color::srgb(0.12, 0.13, 0.15), Color::srgb(0.19, 0.20, 0.23)].map(
+      |tone| {
+        materials.add(StandardMaterial {
+          base_color: tone,
+          perceptual_roughness: 0.82,
+          reflectance: 0.24,
+          ..default()
+        })
+      }
+    ),
     glow_mesh: meshes.add(Sphere::new(1.0).mesh().ico(3).expect("glow mesh")),
     torch_glow: materials.add(StandardMaterial {
       base_color: TORCH_GLOW,
@@ -1576,9 +1493,70 @@ fn load_machine_assets(
       perceptual_roughness: 0.2,
       ..default()
     }),
+    hover_glow: materials.add(ghost(Color::srgba(0.45, 1.0, 0.55, 0.16))),
     ghost_valid: materials.add(ghost(Color::srgba(0.25, 0.95, 0.45, 0.35))),
     ghost_blocked: materials.add(ghost(Color::srgba(0.95, 0.25, 0.25, 0.30)))
   });
+}
+
+fn belt_loop(half: f32) -> f32 { 4.0 * (half - BELT_CURVE) + TAU * BELT_CURVE }
+
+fn slat_pose(travel: f32, half: f32) -> Transform {
+  let straight = 2.0 * (half - BELT_CURVE);
+  let arc = PI * BELT_CURVE;
+  let along = travel.rem_euclid(1.0) * belt_loop(half);
+  let curl = |turn: f32, end: f32| {
+    (
+      Vec2::new(end * straight / 2.0, 0.0)
+        + BELT_CURVE * Vec2::new(turn.sin(), turn.cos()),
+      turn
+    )
+  };
+  let (spot, turn) = if along < straight {
+    (Vec2::new(along - straight / 2.0, BELT_CURVE), 0.0)
+  } else if along < straight + arc {
+    curl((along - straight) / BELT_CURVE, 1.0)
+  } else if along < 2.0 * straight + arc {
+    (Vec2::new(1.5 * straight + arc - along, -BELT_CURVE), PI)
+  } else {
+    curl(PI + (along - 2.0 * straight - arc) / BELT_CURVE, -1.0)
+  };
+  Transform::from_xyz(spot.x, BELT_MID + spot.y, 0.0)
+    .with_rotation(Quat::from_rotation_z(-turn))
+}
+
+fn belt_half_of(kind: MachineKind) -> f32 { belt_half(kind.footprint().x) }
+
+fn slat_travel(phase: f32, half: f32, secs: f32) -> f32 {
+  phase + secs * BELT_SPEED / belt_loop(half)
+}
+
+fn slats_along(half: f32) -> usize { (belt_loop(half) / SLAT_PITCH).round() as usize }
+
+fn slat_at(
+  assets: &MachineAssets,
+  material: &Handle<StandardMaterial>,
+  travel: f32,
+  half: f32
+) -> impl Bundle {
+  (
+    Mesh3d(assets.slat_mesh.clone()),
+    MeshMaterial3d(material.clone()),
+    slat_pose(travel, half)
+  )
+}
+
+#[derive(Component)]
+struct BeltSlat {
+  phase: f32,
+  half: f32
+}
+
+fn slide_belt_slats(time: Res<Time>, mut slats: Query<(&BeltSlat, &mut Transform)>) {
+  for (slat, mut transform) in &mut slats {
+    *transform =
+      slat_pose(slat_travel(slat.phase, slat.half, time.elapsed_secs()), slat.half);
+  }
 }
 
 fn arrow_span(kind: MachineKind) -> f32 { kind.footprint().x as f32 * CELL - ARROW_INSET }
@@ -1596,16 +1574,31 @@ fn arrow_at(assets: &MachineAssets, offset: f32) -> impl Bundle {
   )
 }
 
-pub fn spawn_ghost_arrows(
+pub fn spawn_ghost_belt(
   commands: &mut Commands,
   assets: &MachineAssets,
+  material: &Handle<StandardMaterial>,
   kind: MachineKind,
+  secs: f32,
   root: Entity
 ) {
   let arrows = arrows_along(kind);
   for step in 0..arrows {
     let slide = step as f32 / (arrows - 1) as f32 - 0.5;
     commands.spawn((arrow_at(assets, slide * arrow_span(kind)), ChildOf(root)));
+  }
+  let half = belt_half_of(kind);
+  let slats = slats_along(half);
+  for step in 0..slats {
+    commands.spawn((
+      slat_at(
+        assets,
+        material,
+        slat_travel(step as f32 / slats as f32, half, secs),
+        half
+      ),
+      ChildOf(root)
+    ));
   }
 }
 
@@ -1616,19 +1609,13 @@ pub fn place(
   transform: Transform
 ) -> Entity {
   let root = commands
-    .spawn((
-      Name::new(kind.name()),
-      RigidBody::Static,
-      Mesh3d(assets.mesh(kind)),
-      MeshMaterial3d(assets.materials[kind.index()].clone()),
-      transform
-    ))
+    .spawn((Name::new(kind.name()), RigidBody::Static, transform, assets.model(kind)))
     .id();
 
   let bolt = |commands: &mut Commands, collider: Collider, at: Transform| {
     commands.spawn((collider, at, ChildOf(root)));
   };
-  for (collider, at) in block::colliders(kind.blocks().unwrap_or_default()) {
+  for (collider, at) in part::colliders(kind.parts().unwrap_or_default()) {
     bolt(commands, collider, at);
   }
   if let Some(dropper) = kind.dropper() {
@@ -1798,24 +1785,19 @@ pub fn place(
   if kind.carries_belt() {
     let length = kind.footprint().x as f32 * CELL - 0.02;
     commands.spawn((
-      ConveyorBelt { local_direction: Vec3::X, speed: 1.8 },
-      Collider::cuboid(length, BELT_TOP, 1.84),
+      ConveyorBelt { local_direction: Vec3::X, speed: BELT_SPEED },
+      Collider::cuboid(length, BELT_TOP, CELL - 0.02),
       Friction::new(1.0),
       Transform::from_xyz(0.0, BELT_TOP / 2.0, 0.0),
       ChildOf(root)
     ));
-    for side in [-1.0, 1.0] {
-      bolt(
-        commands,
-        Collider::cuboid(length, 0.20, 0.12),
-        Transform::from_xyz(0.0, 0.16, side * 0.95)
-      );
-    }
-    let arrows = arrows_along(kind);
-    for step in 0..arrows {
+    let half = belt_half_of(kind);
+    let slats = slats_along(half);
+    for step in 0..slats {
+      let phase = step as f32 / slats as f32;
       commands.spawn((
-        BeltArrow { phase: step as f32 / arrows as f32, span: arrow_span(kind) },
-        arrow_at(assets, 0.0),
+        BeltSlat { phase, half },
+        slat_at(assets, &assets.slat_materials[step % 2], phase, half),
         ChildOf(root)
       ));
     }
@@ -1959,5 +1941,5 @@ pub fn plugin(app: &mut App) {
   app
     .add_plugins(HanabiPlugin)
     .add_systems(PreStartup, load_machine_assets)
-    .add_systems(Update, freeze_previews);
+    .add_systems(Update, (freeze_previews, slide_belt_slats));
 }

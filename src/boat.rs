@@ -1,18 +1,17 @@
-use {crate::{block::{self, Block},
-             catalog::{MachineKind, MachinePreviews},
+use {crate::{catalog::{MachineKind, MachinePreviews},
              construction::Inventory,
              icon,
              machine::Money,
+             material::{self, Coats},
              menu::playing,
+             part::{self, Assembly, Axis, group},
              player::Player,
              sdf,
              store::{self, HoverInfo, ToastStack, announce},
              style::{self, Bold, heavy, label, tinted},
-             texture,
              world::{GROUND, SEA_LEVEL}},
      avian3d::prelude::*,
-     bevy::{camera::visibility::NoFrustumCulling, light::NotShadowCaster,
-            math::Affine2, prelude::*}};
+     bevy::{camera::visibility::NoFrustumCulling, light::NotShadowCaster, prelude::*}};
 
 const DECK: f32 = GROUND - 0.8;
 const WALK_FROM: f32 = 38.0;
@@ -39,7 +38,6 @@ const PILING: LinearRgba = LinearRgba::rgb(0.35, 0.26, 0.17);
 const HULL: LinearRgba = LinearRgba::rgb(0.52, 0.15, 0.12);
 const STRIPE: LinearRgba = LinearRgba::rgb(0.92, 0.84, 0.60);
 const CABIN: LinearRgba = LinearRgba::rgb(0.11, 0.42, 0.50);
-const PANE: LinearRgba = LinearRgba::rgb(0.05, 0.09, 0.12);
 const CANVAS: LinearRgba = LinearRgba::rgb(1.0, 0.97, 0.90);
 const PENNANT: LinearRgba = LinearRgba::rgb(0.84, 0.16, 0.14);
 const CRATE: LinearRgba = LinearRgba::rgb(0.49, 0.34, 0.19);
@@ -103,40 +101,29 @@ fn hull_paint(at: Vec3, _: Vec3) -> LinearRgba {
   }
 }
 
-fn timber(half: Vec3, at: Vec3) -> Block { Block::new(half, at, TIMBER) }
-
-fn dock_blocks() -> impl Iterator<Item = Block> {
+fn dock_parts() -> Assembly {
+  let boards = material::BOARD.tinted(TIMBER);
+  let piles = material::BOARD.tinted(PILING);
   let walk = |from: f32, to: f32, half: f32| {
-    timber(
-      Vec3::new((to - from) / 2.0, PLANK_HALF, half),
-      Vec3::new((from + to) / 2.0, DECK - PLANK_HALF, 0.0)
-    )
+    boards.slab(Vec3::new(to - from, PLANK_HALF * 2.0, half * 2.0)).under(Vec3::new(
+      (from + to) / 2.0,
+      DECK,
+      0.0
+    ))
   };
-  let piling = |at: Vec3| {
-    Block::new(
-      Vec3::new(0.18, (DECK - PILE_FOOT) / 2.0, 0.18),
-      Vec3::new(at.x, (DECK + PILE_FOOT) / 2.0, at.z),
-      PILING
-    )
-  };
-  let bollard = |along: f32| {
-    Block::new(
-      Vec3::new(0.16, 0.34, 0.16),
-      Vec3::new(HEAD_TO - 0.5, DECK + 0.34, along),
-      PILING
-    )
-  };
+  let piling =
+    |at: Vec3| piles.beam(DECK - PILE_FOOT, 0.36).under(Vec3::new(at.x, DECK, at.z));
+  let bollard =
+    |along: f32| piles.beam(0.68, 0.32).on(Vec3::new(HEAD_TO - 0.5, DECK, along));
   let lamp_post = |across: f32| {
-    timber(
-      Vec3::new(0.12, LANTERN_HEIGHT / 2.0, 0.12),
-      Vec3::new(HEAD_FROM + 0.8, DECK + LANTERN_HEIGHT / 2.0, across)
-    )
+    boards.beam(LANTERN_HEIGHT, 0.24).on(Vec3::new(HEAD_FROM + 0.8, DECK, across))
   };
   let rail = |across: f32| {
-    timber(
-      Vec3::new((WALK_TO - WALK_FROM) / 2.0, 0.16, 0.1),
-      Vec3::new((WALK_FROM + WALK_TO) / 2.0, DECK + 0.5, across * WALK_HALF)
-    )
+    boards.slab(Vec3::new(WALK_TO - WALK_FROM, 0.32, 0.2)).at(Vec3::new(
+      (WALK_FROM + WALK_TO) / 2.0,
+      DECK + 0.5,
+      across * WALK_HALF
+    ))
   };
   let walk_piles = [WALK_FROM + 1.0, 42.0, 46.0]
     .into_iter()
@@ -145,59 +132,50 @@ fn dock_blocks() -> impl Iterator<Item = Block> {
     [-1.0, 1.0].map(|side| Vec3::new(along, 0.0, side * (HEAD_HALF - 0.5)))
   });
 
-  [
-    walk(WALK_FROM, WALK_TO, WALK_HALF),
-    walk(HEAD_FROM, HEAD_TO, HEAD_HALF),
-    rail(1.0),
-    rail(-1.0),
-    bollard(3.4),
-    bollard(-3.4),
-    lamp_post(HEAD_HALF - 0.9),
-    lamp_post(0.9 - HEAD_HALF)
-  ]
-  .into_iter()
-  .chain(walk_piles.chain(head_piles).map(piling))
+  let sides =
+    group([rail(1.0), bollard(3.4), lamp_post(HEAD_HALF - 0.9)]).mirrored(Axis::Z);
+
+  [walk(WALK_FROM, WALK_TO, WALK_HALF), walk(HEAD_FROM, HEAD_TO, HEAD_HALF)]
+    .into_iter()
+    .chain(sides)
+    .chain(walk_piles.chain(head_piles).map(piling))
+    .collect()
 }
 
-fn fittings() -> impl Iterator<Item = Block> {
-  let crate_at = |at: Vec3, half: f32| Block::new(Vec3::splat(half), at, CRATE);
-  [
-    Block::new(Vec3::new(0.26, 1.1, 0.42), Vec3::new(0.0, BULWARK + 0.7, -6.4), TIMBER),
-    Block::new(Vec3::new(1.85, 1.1, 1.7), Vec3::new(0.0, BOAT_DECK + 1.1, CASTLE), CABIN),
-    Block::new(
-      Vec3::new(1.76, 0.22, 1.56),
-      Vec3::new(0.0, BOAT_DECK + 1.2, CASTLE),
-      PANE
-    ),
-    Block::new(Vec3::new(1.88, 0.12, 1.68), Vec3::new(0.0, CASTLE_TOP, CASTLE), TIMBER),
-    Block::new(
-      Vec3::new(0.17, (MAST_TOP - BOAT_DECK) / 2.0, 0.17),
-      Vec3::new(0.0, (MAST_TOP + BOAT_DECK) / 2.0, MAST_AT),
-      TIMBER
-    ),
-    Block::new(Vec3::new(3.2, 0.13, 0.13), Vec3::new(0.0, YARD, MAST_AT), TIMBER),
-    crate_at(Vec3::new(0.9, BOAT_DECK + 0.5, -3.2), 0.5),
-    crate_at(Vec3::new(-0.9, BOAT_DECK + 0.45, -2.2), 0.45),
-    crate_at(Vec3::new(0.9, BOAT_DECK + 1.38, -3.2), 0.38)
-  ]
-  .into_iter()
+fn fittings() -> Assembly {
+  let timber = material::TIMBER.tinted(TIMBER);
+  let boxed = |at: Vec3, size: f32| material::BOARD.tinted(CRATE).cube(size).at(at);
+  group([
+    timber.slab(Vec3::new(0.52, 2.2, 0.84)).at(Vec3::new(0.0, BULWARK + 0.7, -6.4)),
+    timber.tinted(CABIN).slab(Vec3::new(3.7, 2.2, 3.4)).at(Vec3::new(
+      0.0,
+      BOAT_DECK + 1.1,
+      CASTLE
+    )),
+    material::GLASS.slab(Vec3::new(3.52, 0.44, 3.12)).at(Vec3::new(
+      0.0,
+      BOAT_DECK + 1.2,
+      CASTLE
+    )),
+    timber.slab(Vec3::new(3.76, 0.24, 3.36)).at(Vec3::new(0.0, CASTLE_TOP, CASTLE)),
+    timber.beam(MAST_TOP - BOAT_DECK, 0.34).on(Vec3::new(0.0, BOAT_DECK, MAST_AT)),
+    timber.slab(Vec3::new(6.4, 0.26, 0.26)).at(Vec3::new(0.0, YARD, MAST_AT)),
+    boxed(Vec3::new(0.9, BOAT_DECK + 0.5, -3.2), 1.0),
+    boxed(Vec3::new(-0.9, BOAT_DECK + 0.45, -2.2), 0.9),
+    boxed(Vec3::new(0.9, BOAT_DECK + 1.38, -3.2), 0.76)
+  ])
 }
 
-fn canvas_blocks() -> impl Iterator<Item = Block> {
-  [
-    Block::new(Vec3::new(2.9, 2.2, 0.05), Vec3::new(0.0, SAIL_MID, MAST_AT), CANVAS),
-    Block::new(
-      Vec3::new(2.9, 0.42, 0.07),
-      Vec3::new(0.0, SAIL_MID - 0.1, MAST_AT),
-      PENNANT
-    ),
-    Block::new(
-      Vec3::new(0.85, 0.34, 0.04),
-      Vec3::new(0.85, MAST_TOP - 0.4, MAST_AT),
-      PENNANT
-    )
-  ]
-  .into_iter()
+fn canvas_parts() -> Assembly {
+  let pennant = material::CANVAS.tinted(PENNANT);
+  group([
+    material::CANVAS
+      .tinted(CANVAS)
+      .slab(Vec3::new(5.8, 4.4, 0.1))
+      .at(Vec3::new(0.0, SAIL_MID, MAST_AT)),
+    pennant.slab(Vec3::new(5.8, 0.84, 0.14)).at(Vec3::new(0.0, SAIL_MID - 0.1, MAST_AT)),
+    pennant.slab(Vec3::new(1.7, 0.68, 0.08)).at(Vec3::new(0.85, MAST_TOP - 0.4, MAST_AT))
+  ])
 }
 
 #[derive(Component)]
@@ -207,15 +185,8 @@ fn spawn_harbour(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
-  mut images: ResMut<Assets<Image>>
+  mut coats: ResMut<Coats>
 ) {
-  let planked = |texture: Handle<Image>, tiling: Vec2| StandardMaterial {
-    base_color_texture: Some(texture),
-    uv_transform: Affine2::from_scale(Vec2::ONE / tiling),
-    perceptual_roughness: 0.85,
-    reflectance: 0.18,
-    ..default()
-  };
   let lantern = materials.add(StandardMaterial {
     base_color: LANTERN_GLOW,
     emissive: LinearRgba::rgb(30.0, 18.0, 7.0),
@@ -237,9 +208,11 @@ fn spawn_harbour(
     .spawn((
       Name::new("Dock"),
       RigidBody::Static,
-      Mesh3d(meshes.add(block::assembled(dock_blocks()))),
-      MeshMaterial3d(
-        materials.add(planked(images.add(texture::planks()), texture::PLANK))
+      part::spawned(
+        part::assembled(dock_parts()),
+        &mut meshes,
+        &mut coats,
+        &mut materials
       )
     ))
     .id();
@@ -265,27 +238,32 @@ fn spawn_harbour(
       Boat,
       RigidBody::Kinematic,
       Visibility::Hidden,
-      Mesh3d(meshes.add(block::merged(
-        sdf::bake_painted(
-          hull_shape(),
-          sdf::Bounds::around(Vec3::new(0.0, 1.0, 0.0), LENGTH + 0.4, 8),
-          hull_paint
+      part::spawned(
+        part::coated(
+          part::assembled(fittings()),
+          material::TIMBER.coat(),
+          sdf::bake_painted(
+            hull_shape(),
+            sdf::Bounds::around(Vec3::new(0.0, 1.0, 0.0), LENGTH + 0.4, 8),
+            hull_paint
+          )
         ),
-        block::assembled(fittings())
-      ))),
-      MeshMaterial3d(materials.add(planked(images.add(texture::wood()), texture::GRAIN))),
+        &mut meshes,
+        &mut coats,
+        &mut materials
+      ),
       Transform::from_translation(MOORING + Vec3::Z * OFFING)
     ))
     .id();
   commands.spawn((
-    Mesh3d(meshes.add(block::assembled(canvas_blocks()))),
-    MeshMaterial3d(materials.add(StandardMaterial {
-      perceptual_roughness: 0.95,
-      reflectance: 0.05,
-      double_sided: true,
-      cull_mode: None,
-      ..default()
-    })),
+    part::spawned(
+      part::assembled(canvas_parts()),
+      &mut meshes,
+      &mut coats,
+      &mut materials
+    ),
+    Transform::default(),
+    Visibility::default(),
     ChildOf(boat)
   ));
   commands.spawn((

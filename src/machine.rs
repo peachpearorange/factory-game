@@ -4,7 +4,6 @@ use {crate::ore::{Effects, GIRTH_CAP, Ore, OreAssets, OreForm, OreLimit},
                   system::{SystemParam, lifetimeless::Read}},
             prelude::*}};
 
-const ARROW_SPEED: f32 = 0.45;
 const GIRTH_DETAIL: u32 = 8;
 pub const PURSE: f32 = 600.0;
 
@@ -13,20 +12,6 @@ pub const PURSE: f32 = 600.0;
 pub struct ConveyorBelt {
   pub local_direction: Vec3,
   pub speed: f32
-}
-
-#[derive(Component)]
-pub struct BeltArrow {
-  pub phase: f32,
-  pub span: f32
-}
-
-fn slide_belt_arrows(time: Res<Time>, mut arrows: Query<(&BeltArrow, &mut Transform)>) {
-  for (arrow, mut transform) in &mut arrows {
-    let travel = (arrow.phase + time.elapsed_secs() * ARROW_SPEED).rem_euclid(1.0);
-    transform.translation.x = (travel - 0.5) * arrow.span;
-    transform.scale = Vec3::splat((4.0 * travel * (1.0 - travel)).sqrt());
-  }
 }
 
 #[derive(SystemParam)]
@@ -181,8 +166,8 @@ fn cull_fallen_ores(
 }
 
 pub fn plugin(app: &mut App) {
-  app.init_resource::<Money>().add_message::<OreSold>().add_systems(
-    Update,
-    (drop_ores, upgrade_ores, burn_ores, cull_fallen_ores, slide_belt_arrows)
-  );
+  app
+    .init_resource::<Money>()
+    .add_message::<OreSold>()
+    .add_systems(Update, (drop_ores, upgrade_ores, burn_ores, cull_fallen_ores));
 }

@@ -1,4 +1,4 @@
-use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_arrows},
+use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_belt},
              menu::playing,
              player::{MainCamera, Player, UiHover}},
      avian3d::prelude::*,
@@ -8,6 +8,8 @@ use {crate::{catalog::{CELL, MachineAssets, MachineKind, place, spawn_ghost_arro
 const GRID_HALF: i32 = 10;
 const REACH: f32 = 40.0;
 const DOOM_SWELL: f32 = 1.04;
+const HOVER_SWELL: f32 = 1.03;
+const SWING_DECAY: f32 = 26.0;
 
 #[derive(Component)]
 pub struct PlacedMachine {
@@ -20,7 +22,7 @@ pub struct PlacedMachine {
 struct Ghost;
 
 #[derive(Component)]
-struct Doomed;
+struct Aimed;
 
 fn covered(cell: IVec2, kind: MachineKind, turns: u8) -> impl Iterator<Item = IVec2> {
   let span = kind.span(turns);
@@ -128,17 +130,29 @@ fn aimed_cell(ray: Ray3d) -> Option<IVec2> {
     .filter(|cell| cell.x.abs() <= GRID_HALF && cell.y.abs() <= GRID_HALF)
 }
 
-fn steer_build(keys: Res<ButtonInput<KeyCode>>, mut mode: ResMut<BuildMode>) {
+#[derive(Resource, Default)]
+struct TurnSwing(f32);
+
+fn steer_build(
+  keys: Res<ButtonInput<KeyCode>>,
+  time: Res<Time>,
+  mut swing: ResMut<TurnSwing>,
+  mut mode: ResMut<BuildMode>
+) {
+  swing.0 *= (-SWING_DECAY * time.delta_secs()).exp();
   if let BuildMode::Placing { kind, turns } = *mode
     && keys.just_pressed(KeyCode::KeyR)
   {
     *mode = BuildMode::Placing { kind, turns: (turns + 1) % 4 };
+    swing.0 = FRAC_PI_2;
   }
 }
 
 fn update_ghost(
+  time: Res<Time>,
   mode: Res<BuildMode>,
   grid: Res<BuildGrid>,
+  swing: Res<TurnSwing>,
   hovering: Res<UiHover>,
   assets: Res<MachineAssets>,
   eye: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
@@ -155,26 +169,33 @@ fn update_ghost(
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(cell) = aimed_cell(ray)
   {
-    let blocked = !grid.free(cell, kind, turns);
+    let material = grid
+      .free(cell, kind, turns)
+      .then(|| assets.ghost_valid.clone())
+      .unwrap_or_else(|| assets.ghost_blocked.clone());
     let ghost = commands
       .spawn((
         Ghost,
         Mesh3d(assets.mesh(kind)),
-        MeshMaterial3d(
-          blocked
-            .then(|| assets.ghost_blocked.clone())
-            .unwrap_or_else(|| assets.ghost_valid.clone())
-        ),
+        MeshMaterial3d(material.clone()),
         cell_transform(cell, kind, turns)
+          * Transform::from_rotation(Quat::from_rotation_y(swing.0))
       ))
       .id();
     if kind.carries_belt() {
-      spawn_ghost_arrows(&mut commands, &assets, kind, ghost);
+      spawn_ghost_belt(
+        &mut commands,
+        &assets,
+        &material,
+        kind,
+        time.elapsed_secs(),
+        ghost
+      );
     }
   }
 }
 
-fn mark_doomed(
+fn mark_aimed(
   mode: Res<BuildMode>,
   hovering: Res<UiHover>,
   spatial: SpatialQuery,
@@ -184,14 +205,19 @@ fn mark_doomed(
   player: Single<Entity, With<Player>>,
   parents: Query<&ChildOf>,
   machines: Query<&PlacedMachine>,
-  doomed: Query<Entity, With<Doomed>>,
+  aimed: Query<Entity, With<Aimed>>,
   mut commands: Commands
 ) {
-  for entity in &doomed {
+  for entity in &aimed {
     commands.entity(entity).despawn();
   }
   let (camera, transform) = *eye;
-  if *mode == BuildMode::Deleting
+  let wash = match *mode {
+    BuildMode::Deleting => Some((assets.ghost_blocked.clone(), DOOM_SWELL)),
+    BuildMode::Idle => Some((assets.hover_glow.clone(), HOVER_SWELL)),
+    BuildMode::Placing { .. } => None
+  };
+  if let Some((material, swell)) = wash
     && !hovering.0
     && let Some(ray) = aim_ray(camera, transform, *window)
     && let Some(hit) = aimed_entity(&spatial, ray, *player)
@@ -199,10 +225,10 @@ fn mark_doomed(
     && let Ok(&PlacedMachine { kind, cell, turns }) = machines.get(root)
   {
     commands.spawn((
-      Doomed,
+      Aimed,
       Mesh3d(assets.mesh(kind)),
-      MeshMaterial3d(assets.ghost_blocked.clone()),
-      cell_transform(cell, kind, turns).with_scale(Vec3::splat(DOOM_SWELL))
+      MeshMaterial3d(material),
+      cell_transform(cell, kind, turns).with_scale(Vec3::splat(swell))
     ));
   }
 }
@@ -287,9 +313,10 @@ pub fn plugin(app: &mut App) {
     .init_resource::<BuildGrid>()
     .init_resource::<BuildMode>()
     .init_resource::<Inventory>()
+    .init_resource::<TurnSwing>()
     .add_systems(
       Update,
-      (steer_build, update_ghost, mark_doomed, take_machine, place_machine)
+      (steer_build, update_ghost, mark_aimed, take_machine, place_machine)
         .chain()
         .run_if(playing)
     );
